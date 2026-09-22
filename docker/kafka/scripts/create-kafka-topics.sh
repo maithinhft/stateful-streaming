@@ -14,6 +14,7 @@ echo "=================================================="
 
 PLAIN_TOPICS=(
   "rule_definitions:6"
+  "data_mappers:6"
   "debezium_heartbeat:1"
   "events_ecommerce:6"
   "events_payment:6"

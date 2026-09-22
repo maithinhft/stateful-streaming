@@ -1,0 +1,20 @@
+{
+  "name": "mongodb-mapper-cdc",
+  "config": {
+    "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
+    "tasks.max": "1",
+    "mongodb.connection.string": "mongodb://mongo1:27017/?replicaSet=rs0",
+    "topic.prefix": "cdc",
+    "database.include.list": "mapper_store",
+    "collection.include.list": "mapper_store.data_mappers",
+    "capture.mode": "change_streams_update_full",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false",
+    "transforms": "route_mapper",
+    "transforms.route_mapper.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route_mapper.regex": ".*\\.data_mappers",
+    "transforms.route_mapper.replacement": "data_mappers"
+  }
+}

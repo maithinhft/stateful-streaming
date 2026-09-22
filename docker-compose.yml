@@ -387,6 +387,83 @@ services:
       - cluster-network
     restart: unless-stopped
 
+  # ============================================================
+  # MongoDB Single-Node Replica Set (for CDC Change Streams)
+  # ============================================================
+
+  mongo1:
+    image: mongo:7.0.14
+    container_name: mongo1
+    hostname: mongo1
+    restart: always
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo1-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand(\"ping\").ok' --quiet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - cluster-network
+
+  mongo-init:
+    image: mongo:7.0.14
+    container_name: mongo-init
+    depends_on:
+      mongo1:
+        condition: service_healthy
+    networks:
+      - cluster-network
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo ">>> Checking MongoDB Replica Set status..."
+        mongosh --host mongo1:27017 --quiet --eval '
+          try {
+            var status = rs.status();
+            if (status.ok === 1) {
+              console.log("Replica Set rs0 already initialized.");
+            }
+          } catch (e) {
+            console.log("Initializing Replica Set rs0...");
+            rs.initiate({
+              _id: "rs0",
+              members: [
+                { _id: 0, host: "mongo1:27017" }
+              ]
+            });
+          }
+        '
+        echo ">>> MongoDB Replica Set check completed!"
+
+  # ============================================================
+  # Mongo Express UI
+  # ============================================================
+
+  mongo-express:
+    image: mongo-express:1.0.2-20-alpine3.19
+    container_name: mongo-express
+    hostname: mongo-express
+    restart: unless-stopped
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo1
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_URL: mongodb://mongo1:27017/?replicaSet=rs0
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8085}:8081"   # Tránh trùng port 8081 của Flink JobManager
+    networks:
+      - cluster-network
 
   # ============================================================
   # Flink JobManager
@@ -675,6 +752,13 @@ services:
           -d @/connectors/postgres-schema-connector.json
         
         echo ""
+        echo ">>> Registering MongoDB Mapper CDC Connector to kafka-connect-plain..."
+        curl -s -X POST \
+          -H "Content-Type: application/json" \
+          http://kafka-connect-plain:8083/connectors \
+          -d @/connectors/mongodb-mapper-connector.json
+        
+        echo ""
         echo ">>> All connectors have been successfully provisioned!"
 
 # ================================================================
@@ -703,6 +787,9 @@ volumes:
 
   grafana-data:
     name: realtime-grafana-data
+
+  mongo1-data:
+    name: realtime-mongo1-data
 
 
 # ================================================================
