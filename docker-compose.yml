@@ -19,7 +19,7 @@ services:
 
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
 
     command:
       - postgres
@@ -103,7 +103,7 @@ services:
       KRB5_KDC: ${KRB5_KDC:-kdc}
       SERVER_IP: ${SERVER_IP:-localhost}
     volumes:
-      - ./security/krb5/init-kdc.sh:/usr/local/bin/init-kdc.sh:ro
+      - ./docker/krb5/init-kdc.sh:/usr/local/bin/init-kdc.sh:ro
       - kerberos-keytabs:/var/lib/secret
     command: ["/bin/sh", "/usr/local/bin/init-kdc.sh"]
     healthcheck:
@@ -165,7 +165,7 @@ services:
 
     volumes:
       - kafka-plain-data:/var/lib/kafka/data
-      - ./security/plain:/etc/kafka/secrets:ro
+      - ./docker/kafka/plain:/etc/kafka/secrets:ro
 
     healthcheck:
       test:
@@ -235,7 +235,7 @@ services:
     volumes:
       - kafka-gssapi-data:/var/lib/kafka/data
       - kerberos-keytabs:/var/lib/secret:ro
-      - ./security/gssapi:/etc/kafka/secrets:ro
+      - ./docker/kafka/gssapi:/etc/kafka/secrets:ro
 
     healthcheck:
       test:
@@ -567,7 +567,7 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -598,8 +598,8 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
     networks:
