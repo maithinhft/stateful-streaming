@@ -20,9 +20,10 @@
 ## 2. Cấu trúc Rule và JSON mẫu
 
 * **Bộ lọc kích hoạt (`trigger_criteria`):**
-    * Cấu trúc dạng mảng: `[{ "source": "...", "version": "...", "key_field": "...", "conditions": [ [cond1, cond2], [cond3] ] }]`.
+    * Cấu trúc dạng mảng: `[{ "source": "...", "version": "...", "key_field": "...", "event_time_field": "...", "conditions": [ [cond1, cond2], [cond3] ] }]`.
     * **Đa nguồn (Multi-source):** Khai báo `source` và `version` riêng giúp định tuyến và lọc dữ liệu nhanh theo từng loại event. Cả 2 nguồn dùng chung `schema_version` được cấu hình trong `application.properties`.
     * **Khóa gom nhóm (`key_field`):** Khai báo trường dữ liệu dùng để `keyBy` (cùng đại diện cho số điện thoại nhưng mỗi schema có thể có tên trường khác nhau, ví dụ `msisdn`, `phone`). **Yêu cầu đầu vào:** Giá trị của trường số điện thoại này bắt buộc phải theo định dạng `(+84)...`.
+    * **Trường thời gian sự kiện (`event_time_field`):** Khai báo tên trường hiển thị cho event time.
     * **Tra cứu danh sách lớn:** Hỗ trợ kiểm tra giá trị qua `IN_DATASET` chung cho cả 1 trường hoặc nhiều trường kết hợp (thay cho `IN` thông thường khi số lượng phần tử quá lớn hoặc giá trị các trường cần đi theo bộ). Engine sẽ dựa vào RocksDB để tra cứu hiệu quả.
     * **Cấu trúc `conditions` (Mảng 2 chiều — DNF):** Là danh sách các list điều kiện con. Chỉ cần thỏa mãn **toàn bộ phần tử trong 1 list điều kiện con** là pass trigger (outer list: OR; inner list: AND).
     * **Kiến trúc Inverted Index:** Để đảm bảo tốc độ lọc event ($O(1)$), tầng `trigger_criteria` áp dụng mô hình Dual-Index (chỉ lập chỉ mục các phép toán có độ chọn lọc cao như `==`, `IN` và `IN_DATASET`), giúp loại bỏ sớm $95\%$ lượng rule không khớp trước khi đi vào `condition_tree`. Chi tiết thiết kế luồng xử lý xem tại 👉 [**Kiến trúc Inverted Index cho Trigger**](06_RULE_INVERTED_INDEX.md).
@@ -42,6 +43,7 @@
       "source": "B",
       "schema_version": "v2",
       "key_field": "msisdn",
+      "event_time_field": "timestamp",
       "conditions": [
         [
           {
@@ -71,6 +73,7 @@
       "source": "A",
       "version": "v2",
       "key_field": "phone_number",
+      "event_time_field": "event_time",
       "conditions": [
         [
           {
@@ -152,6 +155,8 @@ Ví dụ minh họa việc kết hợp đồng thời tra cứu 1 trường danh
     {
       "source": "TRANS_STREAM",
       "schema_version": "v2",
+      "key_field": "msisdn",
+      "event_time_field": "timestamp",
       "conditions": [
         [
           {
@@ -190,7 +195,7 @@ Cấu trúc của `condition_tree` là thành phần lõi chứa logic chính c�
 | :--- | :--- | :--- | :--- |
 | **Routing & Grouping** | `AND`, `OR`<br>(`LOGICAL`) | Dùng để nhóm và kết hợp nhiều điều kiện con lại với nhau. Các node này đóng vai trò làm Node nhánh (Branch Node) trong cây điều kiện. Chúng không tự tính toán ra giá trị, mà chỉ gộp kết quả từ các node con lại với nhau để tạo ra các rule phức tạp ($A \text{ and } (B \text{ or } C)$). | - **`children`** (Array): Danh sách các Node con. Các Node con này có thể tiếp tục là `LOGICAL`, `CONDITION` hoặc `SEQUENCE`. |
 | **Evaluator** | `CONDITION` | Thực hiện so sánh hoặc kiểm tra dữ liệu thực tế. Đóng vai trò là Node lá (Leaf Node) tính toán ra `true`/`false`. Có 2 biến thể:<br><br>- **Stateless**: Thẩm định event hiện tại (nhẹ, độ phức tạp $O(1)$).<br>- **Stateful**: Duy trì trạng thái của các event trước đó (ví dụ `IS_FIRST_ARRIVAL`). | - **`expression`** (Object): Cấu trúc định nghĩa phép toán. Phụ thuộc vào `op`:<br>&nbsp;&nbsp;&nbsp;&nbsp;+ **Stateless** (vd: `==`, `>`, `IN`): Cần `field`/`expr`, `op`, và `value`/`right_field`.<br>&nbsp;&nbsp;&nbsp;&nbsp;+ **Stateful** (vd: `IS_FIRST_ARRIVAL`): Cần `op` đi kèm `order_by`, `key_fields`, `ttl`. |
-| **Pattern Matcher** | `SEQUENCE` | **(Stateful)** Sử dụng cho Complex Event Processing (CEP), nhận diện pattern chuỗi sự kiện. Hoạt động như một Timer mở ra khi gặp sự kiện mở đầu và thay đổi trạng thái khi thời gian trôi qua hoặc khi bắt gặp sự kiện kết thúc. | - **`pattern`** (String): `FOLLOWED_BY` (có B theo sau A), `NOT_FOLLOWED_BY` (không có B theo sau A).<br>- **`within`** (String): Thời gian timeout (vd `"120s"`).<br>- **`join_keys`** (Array): Khóa liên kết định danh ngữ cảnh (vd `device_session_id`).<br>- **`first`** (Object): Bộ lọc sự kiện bắt đầu.<br>- **`second`** (Object): Bộ lọc sự kiện thứ hai. |
+| **Pattern Matcher** | `SEQUENCE` | **(Stateful)** Sử dụng cho Complex Event Processing (CEP), nhận diện pattern chuỗi sự kiện. Hoạt động như một Timer mở ra khi gặp sự kiện mở đầu và thay đổi trạng thái khi thời gian trôi qua hoặc khi bắt gặp sự kiện kết thúc. | - **`pattern`** (String): `FOLLOWED_BY` (có B theo sau A), `NOT_FOLLOWED_BY` (không có B theo sau A).<br>- **`min_time`** (Number): Thời gian chờ tối thiểu.<br>- **`max_time`** (Number): Thời gian chờ tối đa.<br>- **`time_unit`** (String): Đơn vị thời gian (`second`, `minute`, `hour`). Không hỗ trợ `day` trở lên.<br>- **`join_keys`** (Array): Khóa liên kết định danh ngữ cảnh (vd `device_session_id`).<br>- **`first`** (Object): Bộ lọc sự kiện bắt đầu.<br>- **`second`** (Object): Bộ lọc sự kiện thứ hai. |
 
 > **Lưu ý:** Engine sẽ từ các thuộc tính và phép toán (op) stateful để xét xem nên đưa những gì trong event stream vào state.
 
@@ -255,6 +260,8 @@ Cấu trúc sử dụng node kiểu `SEQUENCE` với pattern `NOT_FOLLOWED_BY`.
     {
       "source": "EVT",
       "version": "v1",
+      "key_field": "msisdn",
+      "event_time_field": "event_time",
       "conditions": [
         [
           {
@@ -280,8 +287,10 @@ Cấu trúc sử dụng node kiểu `SEQUENCE` với pattern `NOT_FOLLOWED_BY`.
     // NHƯNG sự kiện thứ hai (second) KHÔNG xuất hiện trong khung thời gian quy định
     "pattern": "NOT_FOLLOWED_BY",
     
-    // Khung thời gian chờ tối đa (Timeout timer = 120 giây)
-    "within": "120s",
+    // Khoảng thời gian chờ (tối thiểu và tối đa) cùng đơn vị
+    "min_time": 0,
+    "max_time": 120,
+    "time_unit": "second",
     
     // JOIN KEYS: Khóa định danh ngữ cảnh.
     // Bắt buộc event B phải có cùng `device_session_id` với event A.
@@ -338,10 +347,10 @@ Với yêu cầu: Trong 4 source A, B, C, D, khi các event có cùng `id` và `
   // 1. BỘ LỌC KÍCH HOẠT (TRIGGER CRITERIA)
   // Lắng nghe cả 4 nguồn dữ liệu A, B, C, D đổ vào hệ thống
   "trigger_criteria": [
-    { "source": "A", "version": "v1", "conditions": [] },
-    { "source": "B", "version": "v1", "conditions": [] },
-    { "source": "C", "version": "v1", "conditions": [] },
-    { "source": "D", "version": "v1", "conditions": [] }
+    { "source": "A", "version": "v1", "key_field": "id", "event_time_field": "processing_time", "conditions": [] },
+    { "source": "B", "version": "v1", "key_field": "id", "event_time_field": "processing_time", "conditions": [] },
+    { "source": "C", "version": "v1", "key_field": "id", "event_time_field": "processing_time", "conditions": [] },
+    { "source": "D", "version": "v1", "key_field": "id", "event_time_field": "processing_time", "conditions": [] }
   ],
 
   // 2. CÂY ĐIỀU KIỆN CHÍNH (CONDITION TREE)
