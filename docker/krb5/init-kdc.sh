@@ -8,10 +8,10 @@ SERVER_IP="${SERVER_IP:-localhost}"
 mkdir -p /var/lib/secret /etc/krb5kdc
 
 # Install Kerberos packages if not present
-if ! command -v krb5kdc > /dev/null 2>&1; then
-    echo "Installing krb5-server and krb5..."
-    apk add --no-cache krb5-server krb5
-fi
+#if ! command -v krb5kdc > /dev/null 2>&1; then
+#    echo "Installing krb5-server and krb5..."
+#    apk add --no-cache krb5-server krb5
+#fi
 
 # Generate krb5.conf
 echo "Writing krb5.conf for realm ${REALM}..."

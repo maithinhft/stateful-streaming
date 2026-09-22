@@ -91,7 +91,9 @@ services:
   # ============================================================
 
   kdc:
-    image: alpine:latest
+    build:
+      context: ./docker/krb5
+      dockerfile: Dockerfile
     container_name: kdc
     hostname: kdc
     ports:
@@ -115,6 +117,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 12s
     networks:
       - cluster-network
     restart: unless-stopped
@@ -165,7 +168,7 @@ services:
 
     volumes:
       - kafka-plain-data:/var/lib/kafka/data
-      - ./docker/kafka/plain:/etc/kafka/secrets:ro
+      - ./docker/kafka/secrets/plain:/etc/kafka/secrets:ro
 
     healthcheck:
       test:
@@ -235,7 +238,7 @@ services:
     volumes:
       - kafka-gssapi-data:/var/lib/kafka/data
       - kerberos-keytabs:/var/lib/secret:ro
-      - ./docker/kafka/gssapi:/etc/kafka/secrets:ro
+      - ./docker/kafka/secrets/gssapi:/etc/kafka/secrets:ro
 
     healthcheck:
       test:
@@ -606,6 +609,73 @@ services:
       - cluster-network
     restart: unless-stopped
 
+  # ============================================================
+  # AUTO-INIT 1: Kafka Topics Initializer (Mounting Shell Script)
+  # ============================================================
+  kafka-topics-init:
+    image: apache/kafka:3.9.1
+    container_name: kafka-topics-init
+    depends_on:
+      kafka-plain:
+        condition: service_healthy
+      kafka-gssapi:
+        condition: service_healthy
+    volumes:
+      - ./docker/kafka/scripts/create-kafka-topics.sh:/usr/local/bin/create-kafka-topics.sh:ro
+      - ./docker/kafka/secrets/plain:/etc/kafka/secrets/plain:ro
+      - ./docker/kafka/secrets/gssapi:/etc/kafka/secrets/gssapi:ro
+      - kerberos-keytabs:/var/lib/secret:ro
+    networks:
+      - cluster-network
+    entrypoint: [ "/bin/bash", "/usr/local/bin/create-kafka-topics.sh" ]
+
+  # ============================================================
+  # AUTO-INIT 2: Debezium Connectors Auto-Registration
+  # ============================================================
+  debezium-init:
+    image: curlimages/curl:latest
+    container_name: debezium-init
+    depends_on:
+      kafka-topics-init:
+        condition: service_completed_successfully
+      kafka-connect-plain:
+        condition: service_started
+      kafka-connect-gssapi:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./docker/kafka/connect:/connectors:ro
+    networks:
+      - cluster-network
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        echo ">>> Waiting for Kafka Connect Plain (:8083) to become healthy..."
+        while [ "$$(curl -s -o /dev/null -w '%{http_code}' http://kafka-connect-plain:8083/connectors)" -ne 200 ]; do
+          sleep 3
+        done
+        
+        echo ">>> Waiting for Kafka Connect GSSAPI (:8083 internal) to become healthy..."
+        while [ "$$(curl -s -o /dev/null -w '%{http_code}' http://kafka-connect-gssapi:8083/connectors)" -ne 200 ]; do
+          sleep 3
+        done
+        
+        echo ">>> Registering Rule CDC Connector to kafka-connect-plain..."
+        curl -s -X POST \
+          -H "Content-Type: application/json" \
+          http://kafka-connect-plain:8083/connectors \
+          -d @/connectors/postgres-rule-connector.json
+        
+        echo ""
+        echo ">>> Registering Schema CDC Connector to kafka-connect-gssapi..."
+        curl -s -X POST \
+          -H "Content-Type: application/json" \
+          http://kafka-connect-gssapi:8083/connectors \
+          -d @/connectors/postgres-schema-connector.json
+        
+        echo ""
+        echo ">>> All connectors have been successfully provisioned!"
 
 # ================================================================
 # Volumes
