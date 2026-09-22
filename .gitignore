@@ -1,3 +1,7 @@
+venv/
+
+tmp/
+
 target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
@@ -13,6 +17,9 @@ target/
 *.iws
 *.iml
 *.ipr
+schema.json
+
+.env
 
 ### Eclipse ###
 .apt_generated
@@ -22,6 +29,7 @@ target/
 .settings
 .springBeans
 .sts4-cache
+test.*
 
 ### NetBeans ###
 /nbproject/private/
@@ -32,9 +40,14 @@ target/
 build/
 !**/src/main/**/build/
 !**/src/test/**/build/
+*.py
 
 ### VS Code ###
 .vscode/
+*.docx
 
 ### Mac OS ###
 .DS_Store
+*.txt
+
+*.pdf
