@@ -25,7 +25,7 @@
     * **Khóa gom nhóm (`key_field`):** Khai báo trường dữ liệu dùng để `keyBy` (cùng đại diện cho số điện thoại nhưng mỗi schema có thể có tên trường khác nhau, ví dụ `msisdn`, `phone`). **Yêu cầu đầu vào:** Giá trị của trường số điện thoại này bắt buộc phải theo định dạng `(+84)...`.
     * **Tra cứu danh sách lớn:** Hỗ trợ kiểm tra giá trị qua `IN_DATASET` chung cho cả 1 trường hoặc nhiều trường kết hợp (thay cho `IN` thông thường khi số lượng phần tử quá lớn hoặc giá trị các trường cần đi theo bộ). Engine sẽ dựa vào RocksDB để tra cứu hiệu quả.
     * **Cấu trúc `conditions` (Mảng 2 chiều — DNF):** Là danh sách các list điều kiện con. Chỉ cần thỏa mãn **toàn bộ phần tử trong 1 list điều kiện con** là pass trigger (outer list: OR; inner list: AND).
-    * **Kiến trúc Inverted Index:** Để đảm bảo tốc độ lọc event ($O(1)$), tầng `trigger_criteria` áp dụng mô hình Dual-Index (chỉ lập chỉ mục các phép toán có độ chọn lọc cao như `==`, `IN` và `IN_DATASET`), giúp loại bỏ sớm $95\%$ lượng rule không khớp trước khi đi vào `condition_tree`. Chi tiết thiết kế luồng xử lý xem tại 👉 [**Kiến trúc Inverted Index cho Trigger**](./06_RULE_INVERTED_INDEX.md).
+    * **Kiến trúc Inverted Index:** Để đảm bảo tốc độ lọc event ($O(1)$), tầng `trigger_criteria` áp dụng mô hình Dual-Index (chỉ lập chỉ mục các phép toán có độ chọn lọc cao như `==`, `IN` và `IN_DATASET`), giúp loại bỏ sớm $95\%$ lượng rule không khớp trước khi đi vào `condition_tree`. Chi tiết thiết kế luồng xử lý xem tại 👉 [**Kiến trúc Inverted Index cho Trigger**](06_RULE_INVERTED_INDEX.md).
 
 ### 2.1. Cấu trúc JSON Rule hoàn chỉnh:
 ```text

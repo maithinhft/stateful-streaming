@@ -179,7 +179,7 @@ flowchart LR
 ### 3.1. Rule Compiler & Dynamic Rule Ingestion
 
 > **Vị trí:** Chạy tại thời điểm Rule CDC đến từ topic `Rule topic` trong `BroadcastProcessFunction`.  
-> **Tham chiếu:** [04_RULE_SCHEMA.md](./04_RULE_SCHEMA.md) & [06_RULE_INVERTED_INDEX.md](./06_RULE_INVERTED_INDEX.md)
+> **Tham chiếu:** [04_RULE_SCHEMA.md](04_RULE_SCHEMA.md) & [06_RULE_INVERTED_INDEX.md](06_RULE_INVERTED_INDEX.md)
 
 #### Mục đích
 Biên dịch trực tiếp cấu hình Rule từ PostgreSQL sang cấu trúc bộ nhớ tối ưu (`CompiledRuleEnvelope`), cấp phát Slot ID cho Inverted Index, phân loại loại hình rule, và liên kết trực tiếp với schema nguồn mà không cần tầng AST field rewriting trung gian.
@@ -260,7 +260,7 @@ public enum RuleType {
 ### 3.2. Input Mapper & IN_DATASET Storage Engine
 
 > **Vị trí:** Quản lý dữ liệu tự định nghĩa bên ngoài từ MongoDB, đồng bộ qua Kafka topic `Input Mapper topic` và lưu trữ tại RocksDB State.  
-> **Tham chiếu:** [IN_DATASET_STORAGE_SPEC.md](./IN_DATASET_STORAGE_SPEC.md)
+> **Tham chiếu:** [IN_DATASET_STORAGE_SPEC.md](IN_DATASET_STORAGE_SPEC.md)
 
 #### Vai trò mới của MongoDB `Mappers`
 MongoDB không còn làm nhiệm vụ đổi tên trường, mà đóng vai trò là **kho lưu trữ các tập danh mục/dữ liệu ngoại lai tự định nghĩa (Custom External Datasets / Lookup Tables)** do người dùng quản trị (ví dụ: Danh sách đen tài khoản `dataset_blacklist_accounts`, danh mục mã gian lận theo kênh `dataset_high_risk_tuples`, v.v.).
@@ -325,7 +325,7 @@ Stream Event {mcc_code: 5411, channel: "MOBILE_APP", province: "HN"}
 ### 3.3. Batch Validation & Key Normalization Engine
 
 > **Vị trí:** Xử lý trực tiếp các bản tin từ các topic `Batch Event topics` trước khi đi vào `keyBy(msisdn)`.  
-> **Tham chiếu:** [07_BATCH_EVENT_SCHEMA.md](./07_BATCH_EVENT_SCHEMA.md)
+> **Tham chiếu:** [07_BATCH_EVENT_SCHEMA.md](07_BATCH_EVENT_SCHEMA.md)
 
 #### Mô hình "Entity - Feature Group"
 Trong thực tế DWH/Data Lake, các câu lệnh Spark/Hive ETL luôn **JOIN và AGGREGATE từ nhiều bảng vật lý** (ví dụ: `sor JOIN cms JOIN s`). Do đó, bản tin Batch không gắn với một bảng đơn lẻ mà gắn với **Nhóm Đặc Trưng Nghiệp Vụ (`dataset_name`)** và định danh tác vụ (`pipeline_id`).
@@ -396,7 +396,7 @@ Hệ thống hỗ trợ 6 kiểu dữ liệu bảng phẳng sau ETL: **`STRING`*
 
 ### 3.4. Inverted Index Trigger Engine
 
-> **Tham chiếu:** [06_RULE_INVERTED_INDEX.md](./06_RULE_INVERTED_INDEX.md)
+> **Tham chiếu:** [06_RULE_INVERTED_INDEX.md](06_RULE_INVERTED_INDEX.md)
 
 #### Kiến trúc Dual-Index
 Mỗi cặp `(source, schema_version)` của luồng Stream sở hữu một bộ Inverted Index riêng:
@@ -443,7 +443,7 @@ Stream Event {source: "CPM", version: "v2", payload: {serviceCode: "TOPUP", amou
 
 ### 3.5. Condition Tree Evaluator
 
-> **Tham chiếu:** [04_RULE_SCHEMA.md](./04_RULE_SCHEMA.md)
+> **Tham chiếu:** [04_RULE_SCHEMA.md](04_RULE_SCHEMA.md)
 
 #### Chiến lược đánh giá Cost-Based Short-Circuit
 Khi Stream Event đã vượt qua tầng Trigger và đi vào CoProcess, Condition Tree được thẩm định với chiến lược phân loại chi phí nhằm tối ưu hóa CPU và I/O:
@@ -663,7 +663,7 @@ flowchart TD
 | **BatchSchemaValidationFunction** | Thịnh | BroadcastProcessFunction thẩm định Batch 5 tầng (Protocol, Key Normalizer, Schema, Anti-Stale, Field Constraints). Sai $\rightarrow$ DLQ. |
 | **Batch State Update Logic** | Thịnh | Trong CoProcess, cập nhật `batchProfileState` theo `<dataset_name>.<field>`, Schema-Driven Point Updates, lưu Epoch `batch_id`. |
 | **Rule Compiler** | Khoa | Parse rule JSON $\rightarrow$ `CompiledRuleEnvelope` (gắn direct schema, phân loại RuleType, cấp phát Slot ID). |
-| **IN_DATASET Storage Engine** | Khoa | Triển khai băm `xxHash64`, Length-prefixed binary encoding, Key 16B và Binary Bucket trên RocksDB State theo [IN_DATASET_STORAGE_SPEC.md](./IN_DATASET_STORAGE_SPEC.md). |
+| **IN_DATASET Storage Engine** | Khoa | Triển khai băm `xxHash64`, Length-prefixed binary encoding, Key 16B và Binary Bucket trên RocksDB State theo [IN_DATASET_STORAGE_SPEC.md](IN_DATASET_STORAGE_SPEC.md). |
 | **Inverted Index Engine** | Khoa | Triển khai `ExactMatchIndex` + `ComplexPredicateIndex` + `SlotManager` (RoaringBitmap COW). |
 | **TriggerAndRuleAttachFunction** | Khoa | BroadcastProcessFunction: Tra cứu Inverted Index + tra cứu RocksDB `IN_DATASET`, lọc và gắn matched rules vào Stream Event. |
 
