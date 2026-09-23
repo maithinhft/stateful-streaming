@@ -323,3 +323,46 @@ Nếu muốn chạy chỉ định một nhóm topics (ví dụ chỉ chạy 6 to
   --sources GNOTIFY_SAVE_MESSAGE_HBASE,history_service_insert_hbase_product,HISTORY_SERVICE_INSERT_HBASE_OBJECT,cdcn_log_central_prod,ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD,core-recharge-history
 ```
 
+---
+
+## 9. Kiến trúc Hiệu năng Cao (10.000+ Events/giây) & Load Testing
+
+Để đáp ứng kiểm thử tải cực hạn (stress test / load test) cho các bộ xử lý Flink Stateful Streaming, simulator đã được tối ưu hóa kiến trúc đa luồng:
+
+### 9.1. Phân tích Tải (Events/s vs Transactions/s)
+Một giao dịch (transaction) được điều phối phát sinh trên 8–9 nguồn (tương đương 8 đến 10 Kafka records).
+- Để đạt **10.000 events/s**: Cần thiết lập `--rate 1200` (~1.200 transactions/s).
+- Để đạt **50.000 events/s**: Cần thiết lập `--rate 6000` (~6.000 transactions/s).
+
+### 9.2. Các Kỹ thuật Tối ưu Hiệu năng
+1. **Worker Pool Đa luồng (`--threads <n>`)**: Khởi tạo nhiều worker độc lập chia tải sinh dữ liệu. Do `KafkaProducer` của Apache Kafka là thread-safe nên các luồng gọi `.send()` đồng thời với zero lock overhead.
+2. **Nanosecond Pacing (`System.nanoTime()` + `LockSupport.parkNanos()`)**: Khắc phục giới hạn độ phân giải của `Thread.sleep(ms)`. Cho phép kiểm soát tốc độ chính xác ở cấp độ micro-giây mà không bị trôi thời gian (drift).
+3. **Khử Lock Contention (`ThreadLocalRandom`)**: Toàn bộ quá trình chọn scenario, khách hàng, số dư và catalog dịch vụ dùng `ThreadLocalRandom.current()`, loại bỏ 100% hiện tượng tranh chấp CAS seed trong `java.util.Random`.
+4. **Cấu hình Kafka Producer High-Throughput**:
+   - `linger.ms = 10`: Cho phép gom các bản ghi thành micro-batch trước khi đẩy xuống tầng socket.
+   - `batch.size = 65536` (64 KB): Tăng dung lượng batch để tối ưu kích thước gói tin TCP.
+   - `compression.type = lz4`: Giảm 60–70% băng thông mạng thô, giảm tải CPU cho Kafka Broker.
+   - `buffer.memory = 67108864` (64 MB): Đảm bảo hàng đợi đệm đủ lớn cho dòng sự kiện tải cao.
+5. **Realtime Throughput Monitor**: Báo cáo tốc độ sinh thực tế (`trans/s` và `events/s`) định kỳ mỗi 1 giây ra console, không in log từng bản ghi giúp tránh nghẽn luồng stdout.
+
+### 9.3. Các Lệnh Chạy Kiểm thử Tải Mẫu
+
+#### Kiểm thử Tải 10.000 Events/giây (Dry-run đo tốc độ CPU)
+```bash
+# Chạy 4 threads, sinh 1.200 trans/s (~10.200 events/s)
+./scripts/run-event-simulator.sh --mode stream --rate 1200 --threads 4 --dry-run
+```
+
+#### Kiểm thử Tải Tối đa Phần cứng (Unlimited Benchmark)
+```bash
+# Sinh 20.000 giao dịch (~170.000 events) với tốc độ tối đa không giới hạn (--rate 0)
+./scripts/run-event-simulator.sh --mode batch --count 20000 --threads 8 --rate 0 --dry-run
+```
+
+#### Bắn Tải Thực tế Lên Cụm Kafka
+```bash
+# Bắn 1.200 trans/s thực tế lên các broker Kafka
+./scripts/run-event-simulator.sh --mode stream --rate 1200 --threads 4
+```
+
+

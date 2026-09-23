@@ -14,9 +14,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * Ứng dụng chính sinh dữ liệu realtime cho 9 nguồn sự kiện và đẩy vào 2 cụm Kafka tương ứng:
@@ -36,11 +37,13 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class EventSimulatorMain {
     private static final Logger log = LoggerFactory.getLogger(EventSimulatorMain.class);
+    private static final Map<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         String mode = "stream"; // "stream" hoặc "batch"
-        double ratePerSec = 2.0; // số giao dịch / giây
+        double ratePerSec = 2.0; // số giao dịch / giây (1 giao dịch ~8-10 sự kiện)
         long count = -1; // -1 nghĩa là chạy liên tục
+        int numThreads = Math.max(2, Runtime.getRuntime().availableProcessors());
         boolean dryRun = false;
         String envPath = null;
         String outputDir = null;
@@ -57,6 +60,9 @@ public class EventSimulatorMain {
                     break;
                 case "--count":
                     if (i + 1 < args.length) count = Long.parseLong(args[++i]);
+                    break;
+                case "--threads":
+                    if (i + 1 < args.length) numThreads = Math.max(1, Integer.parseInt(args[++i]));
                     break;
                 case "--dry-run":
                     dryRun = true;
@@ -84,11 +90,16 @@ public class EventSimulatorMain {
             count = 50; // mặc định 50 giao dịch nếu chạy batch
         }
 
+        String rateStr = (ratePerSec <= 0)
+                ? "UNLIMITED (Max Throughput Benchmark)"
+                : String.format("%.0f trans/s (~%.0f events/s)", ratePerSec, ratePerSec * 8.5);
+
         System.out.println("╔════════════════════════════════════════════════════════════════════╗");
         System.out.println("║          REALTIME EVENT DATA SIMULATOR (9 KAFKA SOURCES)           ║");
         System.out.println("╠════════════════════════════════════════════════════════════════════╣");
         System.out.println("║ Mode:       " + String.format("%-54s", mode.toUpperCase()) + "║");
-        System.out.println("║ Rate:       " + String.format("%-54s", ratePerSec + " trans/sec") + "║");
+        System.out.println("║ Threads:    " + String.format("%-54s", numThreads + " worker threads") + "║");
+        System.out.println("║ Target Rate:" + String.format("%-54s", rateStr) + "║");
         System.out.println("║ Count:      " + String.format("%-54s", (count < 0 ? "Continuous (Ctrl+C to stop)" : count + " transactions")) + "║");
         System.out.println("║ Dry-run:    " + String.format("%-54s", dryRun) + "║");
         System.out.println("║ Output dir: " + String.format("%-54s", (outputDir != null ? outputDir : "None")) + "║");
@@ -101,6 +112,7 @@ public class EventSimulatorMain {
         AtomicBoolean running = new AtomicBoolean(true);
         Map<String, AtomicLong> eventStats = new ConcurrentHashMap<>();
         AtomicLong totalTransactions = new AtomicLong(0);
+        AtomicLong totalEvents = new AtomicLong(0);
 
         for (EventGenerator gen : coordinator.getGenerators()) {
             eventStats.put(gen.getSourceTopic(), new AtomicLong(0));
@@ -115,59 +127,126 @@ public class EventSimulatorMain {
             }
         }
 
+        ExecutorService workerPool = Executors.newFixedThreadPool(numThreads);
+        ScheduledExecutorService reporter = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "metrics-reporter");
+            t.setDaemon(true);
+            return t;
+        });
+
+        final double targetRate = ratePerSec;
+        final long targetCount = count;
+
+        AtomicBoolean summaryPrinted = new AtomicBoolean(false);
+
         try (KafkaSimulatorProducer producer = new KafkaSimulatorProducer(dryRun, envPath)) {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 log.info("Nhận tín hiệu dừng, đang hoàn tất các bản ghi dở dang...");
                 running.set(false);
+                workerPool.shutdown();
+                try {
+                    workerPool.awaitTermination(3, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {}
+                reporter.shutdown();
                 producer.flush();
-                printSummary(totalTransactions.get(), eventStats);
+                if (summaryPrinted.compareAndSet(false, true)) {
+                    printSummary(totalTransactions.get(), eventStats);
+                }
             }));
 
-            long delayMs = (ratePerSec > 0) ? (long) (1000.0 / ratePerSec) : 500;
-            log.info("Bắt đầu sinh sự kiện với chu kỳ {} ms / giao dịch...", delayMs);
+            // Bắt đầu luồng báo cáo Throughput định kỳ mỗi 1 giây
+            AtomicLong lastTx = new AtomicLong(0);
+            AtomicLong lastEv = new AtomicLong(0);
+            reporter.scheduleAtFixedRate(() -> {
+                long curTx = totalTransactions.get();
+                long curEv = totalEvents.get();
+                long dTx = curTx - lastTx.getAndSet(curTx);
+                long dEv = curEv - lastEv.getAndSet(curEv);
+                log.info("[Throughput] {} trans/s (~{} events/s) | Tổng lũy kế: {} trans, {} events",
+                        dTx, dEv, curTx, curEv);
+            }, 1, 1, TimeUnit.SECONDS);
 
-            while (running.get() && (count < 0 || totalTransactions.get() < count)) {
-                List<EventRecord> records = coordinator.generateTransactionEvents(selectedSources);
-                long currentTx = totalTransactions.incrementAndGet();
+            log.info("Khởi chạy {} worker threads để sinh dữ liệu tải cao...", numThreads);
 
-                for (EventRecord record : records) {
-                    producer.send(record);
-                    eventStats.computeIfAbsent(record.getTopic(), k -> new AtomicLong(0)).incrementAndGet();
+            // Tính chu kỳ phát sóng nano-giây trên mỗi worker (nếu có giới hạn rate)
+            final long intervalNanosPerWorker = (targetRate > 0)
+                    ? (long) (1_000_000_000.0 * numThreads / targetRate)
+                    : 0;
 
-                    // Ghi ra file nếu có chỉ định outputDir
-                    if (outPath != null) {
-                        saveToFile(outPath, record);
+            List<Future<?>> futures = new ArrayList<>();
+            for (int t = 0; t < numThreads; t++) {
+                futures.add(workerPool.submit(() -> {
+                    long nextEmitTime = System.nanoTime();
+                    while (running.get()) {
+                        // Kiểm tra giới hạn tổng số giao dịch
+                        long curTx = totalTransactions.incrementAndGet();
+                        if (targetCount > 0 && curTx > targetCount) {
+                            totalTransactions.decrementAndGet();
+                            running.set(false);
+                            break;
+                        }
+
+                        // Điều tiết tốc độ nano-giây (Pacing)
+                        if (intervalNanosPerWorker > 0) {
+                            long now = System.nanoTime();
+                            if (now < nextEmitTime) {
+                                long waitNanos = nextEmitTime - now;
+                                if (waitNanos > 2_000_000L) { // Nếu thời gian chờ > 2ms thì park luồng
+                                    LockSupport.parkNanos(waitNanos - 1_000_000L);
+                                }
+                                while (System.nanoTime() < nextEmitTime) {
+                                    Thread.onSpinWait();
+                                }
+                            }
+                            nextEmitTime = System.nanoTime() + intervalNanosPerWorker;
+                        }
+
+                        // Sinh sự kiện của 1 giao dịch trên 9 nguồn
+                        List<EventRecord> records = coordinator.generateTransactionEvents(selectedSources);
+                        for (EventRecord record : records) {
+                            producer.send(record);
+                            eventStats.computeIfAbsent(record.getTopic(), k -> new AtomicLong(0)).incrementAndGet();
+                            totalEvents.incrementAndGet();
+
+                            if (outPath != null) {
+                                saveToFile(outPath, record);
+                            }
+                        }
                     }
-                }
-
-                if (currentTx % 10 == 0 || "batch".equalsIgnoreCase(mode)) {
-                    log.info("Đã sinh {} giao dịch (tổng số sự kiện: {})",
-                            currentTx, eventStats.values().stream().mapToLong(AtomicLong::get).sum());
-                }
-
-                if (delayMs > 0) {
-                    try {
-                        Thread.sleep(delayMs);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
+                }));
             }
 
+            // Đợi tất cả workers hoàn thành (áp dụng cho batch mode hoặc khi đạt targetCount)
+            for (Future<?> f : futures) {
+                try {
+                    f.get();
+                } catch (Exception ignored) {}
+            }
+
+            workerPool.shutdown();
+            workerPool.awaitTermination(5, TimeUnit.SECONDS);
+            reporter.shutdown();
             producer.flush();
-            printSummary(totalTransactions.get(), eventStats);
+            if (summaryPrinted.compareAndSet(false, true)) {
+                printSummary(totalTransactions.get(), eventStats);
+            }
 
         } catch (Exception e) {
             log.error("Lỗi trong quá trình chạy Simulator: {}", e.getMessage(), e);
+        } finally {
+            workerPool.shutdown();
+            reporter.shutdown();
         }
     }
 
     private static void saveToFile(Path baseDir, EventRecord record) {
         try {
             Path topicFile = baseDir.resolve(record.getTopic() + ".jsonl");
-            Files.writeString(topicFile, record.getPayloadJson() + System.lineSeparator(),
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            Object lock = FILE_LOCKS.computeIfAbsent(record.getTopic(), k -> new Object());
+            synchronized (lock) {
+                Files.writeString(topicFile, record.getPayloadJson() + System.lineSeparator(),
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            }
         } catch (IOException e) {
             log.warn("Không thể ghi file cho topic {}: {}", record.getTopic(), e.getMessage());
         }
@@ -199,7 +278,8 @@ public class EventSimulatorMain {
         System.out.println();
         System.out.println("Tùy chọn:");
         System.out.println("  --mode <stream|batch>      Chế độ sinh (stream: liên tục, batch: số lượng cố định, mặc định: stream)");
-        System.out.println("  --rate <n>                 Tốc độ sinh (số giao dịch / giây, mặc định: 2.0)");
+        System.out.println("  --threads <n>              Số lượng luồng worker chạy song song (mặc định: số CPU cores, tối thiểu 2)");
+        System.out.println("  --rate <n>                 Tốc độ sinh (số giao dịch / giây; mỗi giao dịch ~8-10 events; <=0: tối đa không giới hạn, mặc định: 2.0)");
         System.out.println("  --count <n>                Tổng số giao dịch cần sinh (mặc định: liên tục cho stream, 50 cho batch)");
         System.out.println("  --dry-run                  Chỉ sinh dữ liệu và in ra log/file, không gửi mạng tới Kafka");
         System.out.println("  --output-dir <path>        Đường dẫn thư mục lưu các sự kiện dạng .jsonl");
@@ -208,4 +288,3 @@ public class EventSimulatorMain {
         System.out.println("  -h, --help                 Hiển thị hướng dẫn này");
     }
 }
-
