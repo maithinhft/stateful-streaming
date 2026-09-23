@@ -13,9 +13,10 @@ import java.util.Random;
  * 7. DIRTY_DATA (3%): Dữ liệu bất thường/bẩn để test data quality (msisdn sai format, amount âm...).
  */
 public enum Scenario {
-    HAPPY_PATH(70, "00", "Thành công"),
+    HAPPY_PATH(65, "00", "Thành công"),
     INSUFFICIENT_BALANCE(8, "02", "Không đủ số dư"),
-    OTP_RETRY_SUCCESS(6, "00", "Nhập lại OTP thành công"),
+    PRODUCT_DROP_OFF(6, "00", "Đứt gãy sản phẩm (Drop-off)"),
+    OTP_RETRY_SUCCESS(5, "00", "Nhập lại OTP thành công"),
     PARTNER_TIMEOUT(5, "01", "Timeout kết nối đối tác"),
     NEEDS_CORRECTION(5, "05", "Giao dịch cần điều chỉnh"),
     SYSTEM_ERROR(3, "99", "Lỗi hệ thống không xác định"),

@@ -128,26 +128,27 @@ Simulator phân bổ giao dịch theo 7 kịch bản xác suất, phản ánh ch
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│             PHÂN BỔ XÁC SUẤT 7 KỊCH BẢN                    │
+│             PHÂN BỔ XÁC SUẤT 8 KỊCH BẢN                    │
 ├───────────────────────────────────┬────────────┬────────────┤
 │ Kịch bản                          │ Tỉ lệ (%)  │ Trạng thái │
 ├───────────────────────────────────┼────────────┼────────────┤
-│ 1. HAPPY_PATH                     │    70%     │ SUCCESS    │
+│ 1. HAPPY_PATH                     │    65%     │ SUCCESS    │
 │ 2. INSUFFICIENT_BALANCE           │     8%     │ FAILED     │
-│ 3. OTP_RETRY_SUCCESS              │     6%     │ RETRY->OK  │
-│ 4. PARTNER_TIMEOUT                │     5%     │ TIMEOUT    │
-│ 5. NEEDS_CORRECTION               │     5%     │ PENDING->OK│
-│ 6. SYSTEM_ERROR                   │     3%     │ ERROR      │
-│ 7. DIRTY_DATA                     │     3%     │ MALFORMED  │
+│ 3. PRODUCT_DROP_OFF               │     6%     │ DROP-OFF   │
+│ 4. OTP_RETRY_SUCCESS              │     5%     │ RETRY->OK  │
+│ 5. PARTNER_TIMEOUT                │     5%     │ TIMEOUT    │
+│ 6. NEEDS_CORRECTION               │     5%     │ PENDING->OK│
+│ 7. SYSTEM_ERROR                   │     3%     │ ERROR      │
+│ 8. DIRTY_DATA                     │     3%     │ MALFORMED  │
 └───────────────────────────────────┴────────────┴────────────┘
 ```
 
 ### Chi tiết hành vi của từng kịch bản:
 
-1. **`HAPPY_PATH` (70%) — Luồng thành công toàn trình**:
+1. **`HAPPY_PATH` (65%) — Luồng thành công toàn trình**:
    - Tất cả 9 hệ thống đều phản hồi `status = SUCCESS`, `errorCode = 00` (hoặc `0000`).
    - Số dư khách hàng bị trừ tương ứng, tài khoản ngân hàng liên kết báo `debitStatus = SUCCESS`.
-   - Thông báo biến động số dư ví `GNOTIFY_SAVE_MESSAGE_HBASE` ghi nhận loại thông báo trừ tiền (`DEBIT`).
+   - Thông báo biến động số dư ví `GNOTIFY_SAVE_MESSAGE_HBASE` ghi nhận loại thông báo cộng tiền (`CREDIT`).
 
 2. **`INSUFFICIENT_BALANCE` (8%) — Số dư ví không đủ**:
    - Giao dịch bị từ chối ngay tại Gateway và Core Payment.
@@ -155,27 +156,32 @@ Simulator phân bổ giao dịch theo 7 kịch bản xác suất, phản ánh ch
    - `core-recharge-history` và `cdcn_log_central_prod` ghi nhận `FAILED`.
    - Không sinh bản ghi thông báo trừ tiền thành công.
 
-3. **`OTP_RETRY_SUCCESS` (6%) — Nhập sai OTP rồi thử lại thành công**:
+3. **`PRODUCT_DROP_OFF` (6%) — Đứt gãy sản phẩm (Bài toán A2)**:
+   - Mô phỏng hành vi khách hàng bấm nút Continue nhưng bỏ dở, không hoàn tất thanh toán (`SEQUENCE NOT_FOLLOWED_BY` trong 120 giây).
+   - Trong `P1-EVENT-TRACKING`: Sinh sự kiện bấm nút Continue (`Telecom_topup_view_info_user_button_continue`), nhưng **hoàn toàn KHÔNG sinh sự kiện kết quả** (`Telecom_topup_view_transactionresult_app_view_info`).
+   - Phía backend: Không phát sinh bất kỳ giao dịch tài chính hay nạp tiền nào (`V1-INSERT-TRANS`, `core-recharge`... đều không sinh bản ghi).
+
+4. **`OTP_RETRY_SUCCESS` (5%) — Nhập sai OTP rồi thử lại thành công**:
    - Trong `P1-EVENT-TRACKING`, sinh ra **2 sự kiện tracking**:
      + Event 1: Nhập OTP thất bại (`action = OTP_FAILED`).
      + Event 2: Nhập lại OTP thành công (`action = OTP_SUCCESS`).
    - Các hệ thống backend phía sau (`V1-INSERT-TRANS`, `core-recharge`) tiếp tục xử lý thành công toàn trình.
 
-4. **`PARTNER_TIMEOUT` (5%) — Đối tác thứ 3 phản hồi chậm/timeout**:
+5. **`PARTNER_TIMEOUT` (5%) — Đối tác thứ 3 phản hồi chậm/timeout**:
    - Gateway ghi nhận `errorCode = 08`, `errorMessage = "Hệ thống đối tác phản hồi chậm"`.
    - `ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD` trả về trạng thái timeout (`status = TIMEOUT`, `errorCode = 08`).
    - `V1-INSERT-TRANS-DAILY-HIS` chuyển trạng thái sang `PROCESSING` hoặc `SUSPECT`.
 
-5. **`NEEDS_CORRECTION` (5%) — Giao dịch cần hiệu chỉnh trạng thái**:
+6. **`NEEDS_CORRECTION` (5%) — Giao dịch cần hiệu chỉnh trạng thái**:
    - Phục vụ kiểm thử cơ chế **Ghép cặp CDC Insert $\rightarrow$ Update**:
-     + Bước 1: Sinh bản ghi Insert vào topic `V1-INSERT-TRANS-DAILY-HIS` với trạng thái ban đầu là chờ đối soát (`status = PENDING`, `errorCode = 01`).
-     + Bước 2: Tự động kích hoạt generator `V1UpdateTransDailyHisGenerator` sinh tiếp bản ghi Update vào topic `V1-UPDATE-TRANS-DAILY-HIS` với cùng `transDailyHisFinanceId`, cập nhật `after.status = SUCCESS`, `after.errorCode = 00`.
+     + Bước 1: Sinh bản ghi Insert vào topic `V1-INSERT-TRANS-DAILY-HIS` với trạng thái ban đầu là chờ đối soát (`status = PENDING`, `errorCode = 01`, `correctCode = "05"`).
+     + Bước 2: Tự động kích hoạt generator `V1UpdateTransDailyHisGenerator` sinh tiếp bản ghi Update vào topic `V1-UPDATE-TRANS-DAILY-HIS` với cùng `transDailyHisFinanceId`, cập nhật `after.status = SUCCESS`, `after.errorCode = 00`, `correctCode = "00"`.
 
-6. **`SYSTEM_ERROR` (3%) — Lỗi hệ thống nội bộ**:
+7. **`SYSTEM_ERROR` (3%) — Lỗi hệ thống nội bộ**:
    - Mô phỏng sự cố mạng nội bộ hoặc nghẽn cơ sở dữ liệu (`errorCode = 99`, `errorMessage = "Lỗi xử lý nội bộ hệ thống"`).
    - Kiểm thử khả năng bắt lỗi và ghi nhận Dead Letter Queue (DLQ) của Rule Engine.
 
-7. **`DIRTY_DATA` (3%) — Dữ liệu bẩn / Biên bất thường**:
+8. **`DIRTY_DATA` (3%) — Dữ liệu bẩn / Biên bất thường**:
    - Cố tình sinh payload thiếu trường khóa (`orderId = null`, `msisdn = ""` hoặc amount âm).
    - Kiểm thử tính bền bỉ (resilience) của Flink Pipeline khi gặp dữ liệu lỗi mà không làm sập Streaming Job.
 
@@ -208,15 +214,29 @@ Simulator phân bổ giao dịch theo 7 kịch bản xác suất, phản ánh ch
 
 ### 6.2. `P1EventTrackingGenerator`
 - **Topic**: `P1-EVENT-TRACKING` (Cụm `kafka-gssapi`)
-- **Nghiệp vụ**: Mô phỏng sự kiện tracking từ Mobile App, chứa thông tin User-Agent, Device OS, App Version, Screen Name, và Button Event (`Telecom_topup_view_info_user_button_continue`, `Telecom_topup_view_transactionresult_app_view_info`...).
+- **Nghiệp vụ**: Mô phỏng sự kiện tracking hành vi người dùng trên Mobile App:
+  + **Event A (Click Continue)**: `object_name = "Telecom_topup_view_info_user_button_continue"`, `action = "click"`.
+  + **Event B (View Result)**: `object_name = "Telecom_topup_view_transactionresult_app_view_info"`, `action = "view"`.
+  + **Liên kết phiên**: Cả hai sự kiện đều mang chung một `device_session_id` được sinh từ `TransactionContext`, phục vụ trực tiếp cho bài toán A2 (`first.device_session_id == second.device_session_id`).
+  + **Hỗ trợ Drop-off**: Khi kịch bản là `PRODUCT_DROP_OFF`, chỉ phát sinh Event A, không phát sinh Event B để Rule Engine phát hiện đứt gãy.
 
 ### 6.3. `GnotifySaveMessageHbaseGenerator`
 - **Topic**: `GNOTIFY_SAVE_MESSAGE_HBASE` (Cụm `kafka-plain`)
-- **Nghiệp vụ**: Thông báo biến động số dư. Chứa trường `balanceBefore`, `balanceAfter`, `amount`, `title` ("Biến động số dư ví Viettel Money"), và `content` ("Giao dịch thành công số tiền...").
+- **Nghiệp vụ**: Bản tin thông báo biến động số dư giao dịch cộng tiền (`paymentType = "CREDIT"`), ánh xạ chính xác 3 nhóm `product` theo quy tắc bài toán A1:
+  1. **`nhan_tien`**:
+     - `clientCode` thuộc danh sách ngân hàng liên kết: `NAPAS`, `VietQR`, `ViCong`, `MB`, `CITAD`, `BIDV`.
+     - Hoặc `clientCode = "VTP"` kèm nội dung `msgContent` chứa các mẫu: `"GD nhan tien"`, `"CHL"` (chi hộ lương), `"Thanh toan PBH"` (chi trả bảo hiểm), hoặc `"#TattoanTK"` (tất toán tiết kiệm).
+  2. **`nap_tien`**:
+     - `clientCode = "VTP"` kèm `msgContent` chứa: `"VTT VTP_REC_"` (nguồn Napas), `"NAPTIENVIETTELPAY"` hoặc `"NaptienVIETTELPAY"` (nguồn liên kết trực tiếp).
+  3. **`tra_thuong`**:
+     - `clientCode = "VTP"` kèm `msgContent` chứa: `"VIETTELMONEY TRATHUONG"` (thưởng data/tiền) hoặc `"QUATANGVOUCHER"` (tặng voucher).
+  - Hỗ trợ đồng thời cả camelCase (`paymentType`, `clientCode`, `msgContent`, `bankTransId`) và snake_case (`payment_type`, `client_code`, `msg_content`, `bank_trans_id`) để tương thích tối đa với mọi downstream consumer và bảng HBase.
 
 ### 6.4. `HistoryServiceInsertHbaseProductGenerator` & `HistoryServiceInsertHbaseObjectGenerator`
 - **Topic**: `history_service_insert_hbase_product` & `HISTORY_SERVICE_INSERT_HBASE_OBJECT` (Cụm `kafka-plain`)
-- **Nghiệp vụ**: Lưu vết lịch sử mua sản phẩm viễn thông, thẻ cào, cước truyền hình/internet, đồng bộ `productId`, `objectType`, `price`, `orderId`.
+- **Nghiệp vụ**: Lưu vết lịch sử mua sản phẩm và thanh toán đối tượng:
+  + Đồng bộ bộ mã nghiệp vụ chuẩn theo bài toán B5: Topup (`675000` / `TELCOCARD`), Mua data (`610301` / `DATAVT`), Điện (`PM1001` / `EVN`), Nước (`PM1001` / `NUOC`), Học phí (`300001` / `FLTSEDU`), Quét QR (`QR0000` / `VNPAYQR`), Chuyển tiền (`000001` / `VTM_TRANSFER`), ePass (`ETC_PAY_CONFIRM` / `EPASS`).
+  + `paymentDetails`: Mảng JSON chứa trường định danh nhóm `master` (`[{"master":"TELCOCARD", ...}]`) để phục vụ bộ lọc phân hệ Corepay 2.0.
 
 ### 6.5. `CdcnLogCentralProdGenerator`
 - **Topic**: `cdcn_log_central_prod` (Cụm `kafka-plain`)

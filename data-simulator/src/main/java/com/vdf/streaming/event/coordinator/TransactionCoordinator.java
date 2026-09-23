@@ -20,10 +20,19 @@ public class TransactionCoordinator {
     private final AtomicInteger requestIdCounter = new AtomicInteger(5000);
 
     private final List<EventGenerator> generators = new ArrayList<>();
-    private static final String[] SERVICES = {
-            "VTM_TOPUP", "VTM_BILL_ELECTRIC", "VTM_BILL_WATER",
-            "VTM_TRANSFER", "VTM_DATA_3G", "VTM_PAYMENT_QR"
-    };
+
+    public record ServiceDef(String serviceCode, String processCode, String masterDetail, String transType) {}
+
+    private static final List<ServiceDef> SERVICE_CATALOG = List.of(
+            new ServiceDef("000000", "675000", "TELCOCARD", "TOPUP"),       // Topup nạp tiền ĐT (B5)
+            new ServiceDef("MCS098", "610301", "DATAVT", "DATA"),            // Mua gói cước Data (B2, B5)
+            new ServiceDef("EVN", "PM1001", "EVN", "PAYMENT"),                // Hóa đơn Điện EVN (B5)
+            new ServiceDef("NUOC", "PM1001", "NUOC", "PAYMENT"),              // Hóa đơn Nước (B5)
+            new ServiceDef("FLTSEDU", "300001", "EDU", "PAYMENT"),            // Học phí EDU (B5)
+            new ServiceDef("VNPAYQR", "QR0000", "VNPAYQR", "PAYMENT"),        // Quét QR thanh toán (B5)
+            new ServiceDef("VTM_TRANSFER", "000001", "TRANSFER", "TRANSFER"), // Chuyển tiền VTM (A1, B5)
+            new ServiceDef("EPASS", "ETC_PAY_CONFIRM", "EPASS", "PAYMENT")    // Thu phí ePass qua trạm (B4, B5)
+    );
 
     public TransactionCoordinator(CustomerPool customerPool, Random rand) {
         this.customerPool = customerPool;
@@ -52,9 +61,12 @@ public class TransactionCoordinator {
         int reqId = requestIdCounter.incrementAndGet();
         String orderId = "ORD" + System.currentTimeMillis() + "_" + financeId;
         String billCode = "BILL" + (100000 + rand.nextInt(900000));
-        String service = SERVICES[rand.nextInt(SERVICES.length)];
-        String transType = service.contains("TRANSFER") ? "TRANSFER" :
-                (service.contains("TOPUP") ? "TOPUP" : "PAYMENT");
+
+        ServiceDef sDef = SERVICE_CATALOG.get(rand.nextInt(SERVICE_CATALOG.size()));
+        String service = sDef.serviceCode();
+        String processCode = sDef.processCode();
+        String masterDetail = sDef.masterDetail();
+        String transType = sDef.transType();
 
         int[] amounts = {20000, 50000, 100000, 200000, 500000, 1000000};
         int transAmount = amounts[rand.nextInt(amounts.length)];
@@ -71,17 +83,28 @@ public class TransactionCoordinator {
 
         TransactionContext ctx = new TransactionContext(
                 customer, scenario, financeId, reqId, orderId, billCode, service,
-                transType, transAmount, transFee, discount, errCode, errMsg, LocalDateTime.now()
+                processCode, masterDetail, transType, transAmount, transFee, discount,
+                errCode, errMsg, LocalDateTime.now()
         );
 
-        // Trừ/cộng số dư nếu giao dịch thành công
-        if ("00".equals(errCode) && transAmount > 0) {
+        // Trừ/cộng số dư nếu giao dịch thành công (và không phải drop-off)
+        if ("00".equals(errCode) && transAmount > 0 && scenario != Scenario.PRODUCT_DROP_OFF) {
             customer.adjustBalance(-ctx.getFinalAmount());
         }
 
         List<EventRecord> allRecords = new ArrayList<>();
         for (EventGenerator gen : generators) {
             if (filterTopics == null || filterTopics.isEmpty() || filterTopics.contains(gen.getSourceTopic())) {
+                // Với kịch bản PRODUCT_DROP_OFF (Bài toán A2): Khách hàng bấm nút Continue trên App nhưng dừng lại,
+                // KHÔNG hoàn tất GD (NOT_FOLLOWED_BY trong 120s). Chỉ sinh event click Continue và log gateway,
+                // KHÔNG sinh các giao dịch hoàn tất ở backend.
+                if (scenario == Scenario.PRODUCT_DROP_OFF) {
+                    if (!P1EventTrackingGenerator.TOPIC.equals(gen.getSourceTopic()) &&
+                        !CdcnLogCentralProdGenerator.TOPIC.equals(gen.getSourceTopic())) {
+                        continue;
+                    }
+                }
+
                 List<EventRecord> recs = gen.generate(ctx);
                 if (recs != null && !recs.isEmpty()) {
                     allRecords.addAll(recs);
