@@ -16,8 +16,12 @@ PLAIN_TOPICS=(
   "rule_definitions:6"
   "data_mappers:6"
   "debezium_heartbeat:1"
-  "events_ecommerce:6"
-  "events_payment:6"
+  "GNOTIFY_SAVE_MESSAGE_HBASE:6"
+  "history_service_insert_hbase_product:6"
+  "HISTORY_SERVICE_INSERT_HBASE_OBJECT:6"
+  "cdcn_log_central_prod:6"
+  "ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD:6"
+  "core-recharge-history:6"
   "result:6"
   "dlq:6"
 )
@@ -43,7 +47,10 @@ echo "=================================================="
 
 GSSAPI_TOPICS=(
   "schema_registry:6"
-  "events_crm:6"
+  "V1-UPDATE-TRANS-DAILY-HIS:6"
+  "P1-EVENT-TRACKING:6"
+  "V1-UPDATE-TRANS-DAILY-HIS:6"
+  "V1-INSERT-TRANS-DAILY-HIS:6"
   "debezium_heartbeat:1"
 )
 
