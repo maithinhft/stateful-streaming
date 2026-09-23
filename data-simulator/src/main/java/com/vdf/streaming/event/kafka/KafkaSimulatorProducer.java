@@ -187,7 +187,14 @@ public class KafkaSimulatorProducer implements AutoCloseable {
             log.info("✅ Khởi tạo thành công Kafka Producer cho cụm GSSAPI tại: {} (Principal: {}, Keytab: {})",
                     gssapiBootstrap, gssapiPrincipal, keytab);
         } catch (Exception e) {
-            log.warn("⚠️ Không thể khởi tạo Kafka Producer GSSAPI (lỗi xác thực Kerberos/Keytab): {}. Các sự kiện GSSAPI sẽ được bỏ qua việc gửi mạng.", e.getMessage());
+            Throwable root = e;
+            while (root.getCause() != null && root.getCause() != root) {
+                root = root.getCause();
+            }
+            String detailMsg = (root.getMessage() != null && !root.getMessage().isBlank())
+                    ? root.getMessage() : root.getClass().getSimpleName();
+            log.warn("⚠️ Không thể khởi tạo Kafka Producer GSSAPI (lỗi xác thực Kerberos/Keytab): {}. Chi tiết lỗi gốc: [{}]. Các sự kiện GSSAPI sẽ được bỏ qua việc gửi mạng.",
+                    e.getMessage(), detailMsg);
         }
     }
 
