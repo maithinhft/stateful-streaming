@@ -34,6 +34,12 @@ public class KafkaSimulatorProducer implements AutoCloseable {
 
     private String plainBootstrap;
     private String gssapiBootstrap;
+    private String plainUsername;
+    private String plainPassword;
+    private String gssapiRealm;
+    private String gssapiPrincipal;
+    private String gssapiKeytab;
+    private String gssapiKrb5Conf;
 
     public KafkaSimulatorProducer(boolean dryRun, String envFilePath) {
         this.dryRun = dryRun;
@@ -77,6 +83,16 @@ public class KafkaSimulatorProducer implements AutoCloseable {
 
         this.plainBootstrap = getEnvOrProp(envProps, "KAFKA_PLAIN_BOOTSTRAP_SERVERS", serverIp + ":" + plainPort);
         this.gssapiBootstrap = getEnvOrProp(envProps, "KAFKA_GSSAPI_BOOTSTRAP_SERVERS", serverIp + ":" + gssapiPort);
+
+        // Cấu hình Authentication cho cụm PLAIN (SASL_PLAINTEXT)
+        this.plainUsername = getEnvOrProp(envProps, "KAFKA_PLAIN_USERNAME", "admin");
+        this.plainPassword = getEnvOrProp(envProps, "KAFKA_PLAIN_PASSWORD", "admin-secret");
+
+        // Cấu hình Authentication cho cụm GSSAPI (Kerberos)
+        this.gssapiRealm = getEnvOrProp(envProps, "KRB5_REALM", "EXAMPLE.COM");
+        this.gssapiPrincipal = getEnvOrProp(envProps, "KAFKA_GSSAPI_PRINCIPAL", "client@" + this.gssapiRealm);
+        this.gssapiKeytab = getEnvOrProp(envProps, "KAFKA_GSSAPI_KEYTAB", "/var/lib/secret/client.keytab");
+        this.gssapiKrb5Conf = getEnvOrProp(envProps, "KAFKA_GSSAPI_KRB5_CONF", "/var/lib/secret/krb5.conf");
     }
 
     private String getEnvOrProp(Properties props, String key, String defaultVal) {
@@ -96,15 +112,19 @@ public class KafkaSimulatorProducer implements AutoCloseable {
             props.put(ProducerConfig.ACKS_CONFIG, "1");
             props.put(ProducerConfig.RETRIES_CONFIG, 3);
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
+            props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
 
-            // Cấu hình SASL_PLAINTEXT PLAIN
+            // Cấu hình SASL_PLAINTEXT PLAIN (Username & Password)
             props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_PLAINTEXT");
             props.put(SaslConfigs.SASL_MECHANISM, "PLAIN");
-            props.put(SaslConfigs.SASL_JAAS_CONFIG,
-                    "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"admin\" password=\"admin-secret\";");
+            String jaasConfig = String.format(
+                    "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\";",
+                    plainUsername, plainPassword
+            );
+            props.put(SaslConfigs.SASL_JAAS_CONFIG, jaasConfig);
 
             this.plainProducer = new KafkaProducer<>(props);
-            log.info("✅ Khởi tạo thành công Kafka Producer cho cụm PLAIN tại: {}", plainBootstrap);
+            log.info("✅ Khởi tạo thành công Kafka Producer cho cụm PLAIN tại: {} (User: {})", plainBootstrap, plainUsername);
         } catch (Exception e) {
             log.error("❌ Lỗi khi khởi tạo Kafka Producer PLAIN: {}", e.getMessage(), e);
         }
@@ -112,22 +132,35 @@ public class KafkaSimulatorProducer implements AutoCloseable {
 
     private void initGssapiProducer() {
         try {
-            // Kiểm tra krb5.conf và keytab
-            String krb5Conf = System.getProperty("java.security.krb5.conf", "/var/lib/secret/krb5.conf");
-            if (!new File(krb5Conf).exists()) {
-                // Thử tìm trong project repo
-                File localKrb5 = new File("docker/krb5/krb5.conf");
-                if (localKrb5.exists()) {
-                    System.setProperty("java.security.krb5.conf", localKrb5.getAbsolutePath());
+            // 1. Kiểm tra file krb5.conf
+            String krb5Conf = System.getProperty("java.security.krb5.conf");
+            if (krb5Conf == null || krb5Conf.isBlank() || !new File(krb5Conf).exists()) {
+                if (new File(this.gssapiKrb5Conf).exists()) {
+                    krb5Conf = this.gssapiKrb5Conf;
+                } else if (new File("docker/krb5/krb5.conf").exists()) {
+                    krb5Conf = new File("docker/krb5/krb5.conf").getAbsolutePath();
+                } else if (new File("/var/lib/secret/krb5.conf").exists()) {
+                    krb5Conf = "/var/lib/secret/krb5.conf";
+                }
+                if (krb5Conf != null && new File(krb5Conf).exists()) {
+                    System.setProperty("java.security.krb5.conf", krb5Conf);
+                    log.info("Sử dụng cấu hình Kerberos krb5.conf tại: {}", krb5Conf);
                 }
             }
 
-            String keytab = "/var/lib/secret/client.keytab";
+            // 2. Kiểm tra file keytab
+            String keytab = this.gssapiKeytab;
             if (!new File(keytab).exists()) {
-                File localKeytab = new File("docker/krb5/client.keytab");
-                if (localKeytab.exists()) {
-                    keytab = localKeytab.getAbsolutePath();
+                if (new File("docker/krb5/client.keytab").exists()) {
+                    keytab = new File("docker/krb5/client.keytab").getAbsolutePath();
+                } else if (new File("/var/lib/secret/client.keytab").exists()) {
+                    keytab = "/var/lib/secret/client.keytab";
                 }
+            }
+
+            if (!new File(keytab).exists()) {
+                log.warn("⚠️ Không tìm thấy file Kerberos keytab tại [{}]. Nếu bạn đang chạy trên máy Host, hãy copy file 'client.keytab' từ server/container về và set KAFKA_GSSAPI_KEYTAB trong .env.", keytab);
+                return;
             }
 
             Properties props = new Properties();
@@ -137,22 +170,24 @@ public class KafkaSimulatorProducer implements AutoCloseable {
             props.put(ProducerConfig.ACKS_CONFIG, "1");
             props.put(ProducerConfig.RETRIES_CONFIG, 3);
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
+            props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
 
-            // Cấu hình SASL_PLAINTEXT GSSAPI (Kerberos)
+            // Cấu hình SASL_PLAINTEXT GSSAPI (Kerberos với Keytab)
             props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_PLAINTEXT");
             props.put(SaslConfigs.SASL_MECHANISM, "GSSAPI");
             props.put(SaslConfigs.SASL_KERBEROS_SERVICE_NAME, "kafka");
 
             String jaasConfig = String.format(
-                    "com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true doNotPrompt=true keyTab=\"%s\" principal=\"client@EXAMPLE.COM\";",
-                    keytab
+                    "com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true doNotPrompt=true keyTab=\"%s\" principal=\"%s\";",
+                    keytab, gssapiPrincipal
             );
             props.put(SaslConfigs.SASL_JAAS_CONFIG, jaasConfig);
 
             this.gssapiProducer = new KafkaProducer<>(props);
-            log.info("✅ Khởi tạo thành công Kafka Producer cho cụm GSSAPI tại: {}", gssapiBootstrap);
+            log.info("✅ Khởi tạo thành công Kafka Producer cho cụm GSSAPI tại: {} (Principal: {}, Keytab: {})",
+                    gssapiBootstrap, gssapiPrincipal, keytab);
         } catch (Exception e) {
-            log.warn("⚠️ Không thể khởi tạo Kafka Producer GSSAPI (có thể do thiếu file keytab Kerberos trên máy host): {}. Các sự kiện GSSAPI sẽ được bỏ qua việc gửi mạng hoặc in ra console.", e.getMessage());
+            log.warn("⚠️ Không thể khởi tạo Kafka Producer GSSAPI (lỗi xác thực Kerberos/Keytab): {}. Các sự kiện GSSAPI sẽ được bỏ qua việc gửi mạng.", e.getMessage());
         }
     }
 

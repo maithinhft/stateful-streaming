@@ -26,8 +26,8 @@ echo "   Kafka Plain: ${SERVER_IP:-localhost}:${KAFKA_PLAIN_PORT:-${KAFKA_PORT:-
 echo "   Kafka GSSAPI: ${SERVER_IP:-localhost}:${KAFKA_GSSAPI_PORT:-9094}"
 echo "=========================================================="
 
-# Chuyển tiếp toàn bộ tham số dòng lệnh vào Java Main
-mvn exec:java -pl data-simulator -f "$PROJECT_ROOT/pom.xml" \
+# Tự động compile và chạy Java Main
+mvn compile exec:java -pl data-simulator -f "$PROJECT_ROOT/pom.xml" \
     -Dexec.mainClass="com.vdf.streaming.event.EventSimulatorMain" \
     -Dexec.args="--env $ENV_FILE $*"
 
