@@ -30,16 +30,29 @@ public class P1EventTrackingGenerator implements EventGenerator {
         List<EventRecord> records = new ArrayList<>();
         Customer cust = ctx.getCustomer();
 
-        // 1. Event 'submit' xác nhận thanh toán/chuyển tiền
-        ObjectNode submitNode = createEventNode(ctx, cust, "submit", "btn_confirm_payment", "BUTTON", ctx.getEpochMillis());
-        records.add(new EventRecord(TOPIC, KafkaClusterType.GSSAPI, cust.getMsisdn(), submitNode.toString(), ctx));
+        // 1. Event A: KH bấm Continue (Bài toán A2: Telecom_topup_view_info_user_button_continue)
+        ObjectNode continueNode = createEventNode(ctx, cust, "click",
+                "Telecom_topup_view_info_user_button_continue", "BUTTON", ctx.getEpochMillis());
+        records.add(new EventRecord(TOPIC, KafkaClusterType.GSSAPI, cust.getMsisdn(), continueNode.toString(), ctx));
 
-        // 2. Kịch bản OTP_RETRY_SUCCESS: sinh thêm 1 event retry sau 2 giây
+        // Kịch bản PRODUCT_DROP_OFF (Bài toán A2 - Đứt gãy sản phẩm):
+        // KH bấm nút Continue nhưng dừng lại, KHÔNG hoàn tất GD (NOT_FOLLOWED_BY trong 120s) -> Không sinh Event B
+        if (ctx.getScenario() == Scenario.PRODUCT_DROP_OFF) {
+            return records;
+        }
+
+        // 2. Kịch bản OTP_RETRY_SUCCESS: sinh thêm 1 event retry sau 1.5 giây
         if (ctx.getScenario() == Scenario.OTP_RETRY_SUCCESS) {
-            ObjectNode retryNode = createEventNode(ctx, cust, "submit", "btn_retry_otp", "BUTTON", ctx.getEpochMillis() + 2000L);
+            ObjectNode retryNode = createEventNode(ctx, cust, "click", "btn_retry_otp", "BUTTON", ctx.getEpochMillis() + 1500L);
             retryNode.put("event_value", "{\"retry\":true,\"previous_error\":\"E01\"}");
             records.add(new EventRecord(TOPIC, KafkaClusterType.GSSAPI, cust.getMsisdn(), retryNode.toString(), ctx));
         }
+
+        // 3. Event B: Kết quả giao dịch (Bài toán A2: Telecom_topup_view_transactionresult_app_view_info)
+        // Cùng device_session_id với Event A để Rule A2 SEQUENCE NOT_FOLLOWED_BY có thể join
+        ObjectNode resultNode = createEventNode(ctx, cust, "view",
+                "Telecom_topup_view_transactionresult_app_view_info", "VIEW", ctx.getEpochMillis() + 2000L);
+        records.add(new EventRecord(TOPIC, KafkaClusterType.GSSAPI, cust.getMsisdn(), resultNode.toString(), ctx));
 
         return records;
     }
@@ -48,12 +61,12 @@ public class P1EventTrackingGenerator implements EventGenerator {
                                        String objectName, String objectType, long timestamp) {
         ObjectNode node = mapper.createObjectNode();
 
-        // Required fields (100% theo json_analysis_report.md)
+        // Required fields
         node.put("id", UUID.randomUUID().toString());
         node.put("action", action);
         node.put("app_name", "ViettelMoney");
         node.put("app_version", "5.2.1");
-        node.put("device_session_id", UUID.randomUUID().toString());
+        node.put("device_session_id", ctx.getDeviceSessionId());
         node.put("event_src", "APP_CLIENT");
         node.put("language", "vi");
         node.put("manufacturer", cust.getDeviceManufacturer());

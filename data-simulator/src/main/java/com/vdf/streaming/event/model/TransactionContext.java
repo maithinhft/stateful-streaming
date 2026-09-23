@@ -18,6 +18,9 @@ public class TransactionContext {
     private final String orderId;
     private final String billCode;
     private final String serviceCode;
+    private final String processCode;
+    private final String masterDetail;
+    private final String deviceSessionId;
     private final String transType;
     private final int transAmount;
     private final int transFee;
@@ -36,6 +39,7 @@ public class TransactionContext {
 
     public TransactionContext(Customer customer, Scenario scenario, int transDailyHisFinanceId,
                               int requestIdInt, String orderId, String billCode, String serviceCode,
+                              String processCode, String masterDetail,
                               String transType, int transAmount, int transFee, int discount,
                               String errorCode, String errorCodeName, LocalDateTime timestamp) {
         this.customer = customer;
@@ -45,6 +49,9 @@ public class TransactionContext {
         this.orderId = orderId;
         this.billCode = billCode;
         this.serviceCode = serviceCode;
+        this.processCode = processCode;
+        this.masterDetail = masterDetail;
+        this.deviceSessionId = "sess_" + java.util.UUID.randomUUID().toString().substring(0, 16);
         this.transType = transType;
         this.transAmount = transAmount;
         this.transFee = transFee;
@@ -77,6 +84,9 @@ public class TransactionContext {
     public String getOrderId() { return orderId; }
     public String getBillCode() { return billCode; }
     public String getServiceCode() { return serviceCode; }
+    public String getProcessCode() { return processCode; }
+    public String getMasterDetail() { return masterDetail; }
+    public String getDeviceSessionId() { return deviceSessionId; }
     public String getTransType() { return transType; }
     public int getTransAmount() { return transAmount; }
     public int getTransFee() { return transFee; }

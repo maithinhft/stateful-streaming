@@ -29,7 +29,7 @@ public class V1InsertTransDailyHisGenerator implements EventGenerator {
         ObjectNode node = mapper.createObjectNode();
 
         // 1. Required fields (100% theo json_analysis_report.md)
-        node.put("processCode", "000001");
+        node.put("processCode", ctx.getProcessCode());
         node.put("requestContent", "{\"service\":\"" + ctx.getServiceCode() + "\",\"orderId\":\"" + ctx.getOrderId() + "\"}");
         node.put("requestDate", ctx.getRequestDate());
         node.put("requestId", ctx.getRequestIdInt());

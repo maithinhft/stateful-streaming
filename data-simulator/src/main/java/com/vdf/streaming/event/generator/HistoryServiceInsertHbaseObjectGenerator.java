@@ -35,9 +35,11 @@ public class HistoryServiceInsertHbaseObjectGenerator implements EventGenerator 
         node.put("tableName", "history_object");
         node.put("serviceName", ctx.getServiceCode());
         node.put("serviceCode", ctx.getServiceCode());
+        node.put("master", ctx.getMasterDetail());
+        node.put("processCode", ctx.getProcessCode());
         node.put("paymentId", "PAY_" + ctx.getOrderId());
         node.put("requestId", String.valueOf(ctx.getRequestIdInt()));
-        node.put("paymentDetails", "{\"orderId\":\"" + ctx.getOrderId() + "\",\"amount\":" + ctx.getFinalAmount() + ",\"status\":\"" + ctx.getErrorCode() + "\"}");
+        node.put("paymentDetails", "[{\"master\":\"" + ctx.getMasterDetail() + "\",\"orderId\":\"" + ctx.getOrderId() + "\",\"amount\":" + ctx.getFinalAmount() + ",\"status\":\"" + ctx.getErrorCode() + "\"}]");
         node.put("content", "Lưu vết giao dịch chi tiết đối tượng " + ctx.getOrderId());
 
         EventRecord record = new EventRecord(TOPIC, KafkaClusterType.PLAIN, cust.getMsisdn(), node.toString(), ctx);
