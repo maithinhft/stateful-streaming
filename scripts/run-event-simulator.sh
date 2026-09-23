@@ -2,6 +2,16 @@
 # =============================================================================
 # scripts/run-event-simulator.sh
 # Khởi chạy Realtime Event Data Simulator cho 9 nguồn Kafka
+#
+# Ví dụ chạy:
+#   1. Chạy bình thường (stream 2 trans/s):
+#      ./scripts/run-event-simulator.sh --mode stream --rate 2
+#
+#   2. Chạy tải cao 10.000 events/giây (~1.200 trans/s, 4 threads):
+#      ./scripts/run-event-simulator.sh --mode stream --rate 1200 --threads 4
+#
+#   3. Chạy benchmark tải tối đa phần cứng (unlimited rate):
+#      ./scripts/run-event-simulator.sh --mode batch --count 10000 --threads 4 --rate 0 --dry-run
 # =============================================================================
 
 set -euo pipefail

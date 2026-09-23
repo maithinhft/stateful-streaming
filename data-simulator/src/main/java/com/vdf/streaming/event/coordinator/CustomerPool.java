@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
+import java.util.concurrent.ThreadLocalRandom;
+
 /**
  * Quản lý tập khách hàng (Customer Pool 150 người theo context.md).
  * Đảm bảo các giao dịch tái sử dụng cùng danh sách khách hàng để giữ tính nhất quán.
@@ -59,7 +61,7 @@ public class CustomerPool {
     }
 
     public Customer getRandomCustomer() {
-        return customers.get(rand.nextInt(customers.size()));
+        return customers.get(ThreadLocalRandom.current().nextInt(customers.size()));
     }
 
     public List<Customer> getAll() {

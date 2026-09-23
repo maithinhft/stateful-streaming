@@ -8,6 +8,7 @@ import com.vdf.streaming.event.model.TransactionContext;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -54,24 +55,25 @@ public class TransactionCoordinator {
      * Tạo 1 giao dịch mới theo kịch bản ngẫu nhiên và sinh toàn bộ sự kiện liên quan trên 9 nguồn.
      */
     public List<EventRecord> generateTransactionEvents(Set<String> filterTopics) {
+        ThreadLocalRandom localRand = ThreadLocalRandom.current();
         Customer customer = customerPool.getRandomCustomer();
-        Scenario scenario = Scenario.pickRandom(rand);
+        Scenario scenario = Scenario.pickRandom(localRand);
 
         int financeId = financeIdCounter.incrementAndGet();
         int reqId = requestIdCounter.incrementAndGet();
         String orderId = "ORD" + System.currentTimeMillis() + "_" + financeId;
-        String billCode = "BILL" + (100000 + rand.nextInt(900000));
+        String billCode = "BILL" + (100000 + localRand.nextInt(900000));
 
-        ServiceDef sDef = SERVICE_CATALOG.get(rand.nextInt(SERVICE_CATALOG.size()));
+        ServiceDef sDef = SERVICE_CATALOG.get(localRand.nextInt(SERVICE_CATALOG.size()));
         String service = sDef.serviceCode();
         String processCode = sDef.processCode();
         String masterDetail = sDef.masterDetail();
         String transType = sDef.transType();
 
         int[] amounts = {20000, 50000, 100000, 200000, 500000, 1000000};
-        int transAmount = amounts[rand.nextInt(amounts.length)];
+        int transAmount = amounts[localRand.nextInt(amounts.length)];
         int transFee = (transAmount >= 500000) ? 2200 : 0;
-        int discount = (rand.nextInt(10) > 7) ? 5000 : 0;
+        int discount = (localRand.nextInt(10) > 7) ? 5000 : 0;
 
         String errCode = scenario.getDefaultErrorCode();
         String errMsg = scenario.getDefaultErrorMsg();

@@ -1,6 +1,7 @@
 package com.vdf.streaming.event.model;
 
 import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 7 kịch bản giao dịch (Scenario Catalog) được định nghĩa trong context.md:
@@ -35,6 +36,10 @@ public enum Scenario {
     public int getWeight() { return weight; }
     public String getDefaultErrorCode() { return defaultErrorCode; }
     public String getDefaultErrorMsg() { return defaultErrorMsg; }
+
+    public static Scenario pickRandom() {
+        return pickRandom(ThreadLocalRandom.current());
+    }
 
     public static Scenario pickRandom(Random rand) {
         int r = rand.nextInt(100);

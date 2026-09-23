@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Quản lý gửi tin nhắn tới 2 cụm Kafka:
@@ -29,6 +30,9 @@ public class KafkaSimulatorProducer implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(KafkaSimulatorProducer.class);
 
     private final boolean dryRun;
+    private final AtomicLong dryRunCounter = new AtomicLong(0);
+    private final AtomicLong sendErrorCounter = new AtomicLong(0);
+
     private KafkaProducer<String, String> plainProducer;
     private KafkaProducer<String, String> gssapiProducer;
 
@@ -114,6 +118,13 @@ public class KafkaSimulatorProducer implements AutoCloseable {
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
             props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
 
+            // Cấu hình tối ưu High-Throughput (10.000+ events/s)
+            props.put(ProducerConfig.LINGER_MS_CONFIG, 10);
+            props.put(ProducerConfig.BATCH_SIZE_CONFIG, 65536); // 64 KB
+            props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
+            props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 67108864L); // 64 MB
+            props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
+
             // Cấu hình SASL_PLAINTEXT PLAIN (Username & Password)
             props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_PLAINTEXT");
             props.put(SaslConfigs.SASL_MECHANISM, "PLAIN");
@@ -172,6 +183,13 @@ public class KafkaSimulatorProducer implements AutoCloseable {
             props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
             props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
 
+            // Cấu hình tối ưu High-Throughput (10.000+ events/s)
+            props.put(ProducerConfig.LINGER_MS_CONFIG, 10);
+            props.put(ProducerConfig.BATCH_SIZE_CONFIG, 65536); // 64 KB
+            props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
+            props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 67108864L); // 64 MB
+            props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
+
             // Cấu hình SASL_PLAINTEXT GSSAPI (Kerberos với Keytab)
             props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_PLAINTEXT");
             props.put(SaslConfigs.SASL_MECHANISM, "GSSAPI");
@@ -200,8 +218,13 @@ public class KafkaSimulatorProducer implements AutoCloseable {
 
     public void send(EventRecord record) {
         if (dryRun) {
-            log.info("[DRY-RUN] [{}] Topic: {}, Key: {}, Payload: {}",
-                    record.getClusterType(), record.getTopic(), record.getKey(), record.getPayloadJson());
+            long count = dryRunCounter.incrementAndGet();
+            if (count <= 20) {
+                log.info("[DRY-RUN] [{}] Topic: {}, Key: {}, Payload: {}",
+                        record.getClusterType(), record.getTopic(), record.getKey(), record.getPayloadJson());
+            } else if (count == 21) {
+                log.info("[DRY-RUN] Đã in 20 sự kiện mẫu đầu tiên. Đang tiếp tục giả lập dry-run tốc độ cao...");
+            }
             return;
         }
 
@@ -219,7 +242,11 @@ public class KafkaSimulatorProducer implements AutoCloseable {
 
         producer.send(kafkaRecord, (metadata, exception) -> {
             if (exception != null) {
-                log.error("❌ Lỗi khi gửi tin nhắn tới Topic [{}]: {}", record.getTopic(), exception.getMessage());
+                long err = sendErrorCounter.incrementAndGet();
+                if (err <= 10 || err % 1000 == 0) {
+                    log.error("❌ Lỗi khi gửi tin nhắn tới Topic [{}]: {} (Tổng số lỗi: {})",
+                            record.getTopic(), exception.getMessage(), err);
+                }
             } else {
                 log.debug("-> Gửi thành công tới Topic [{}] partition {} offset {}",
                         record.getTopic(), metadata.partition(), metadata.offset());
