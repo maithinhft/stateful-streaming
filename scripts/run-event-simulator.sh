@@ -26,6 +26,24 @@ echo "   Kafka Plain: ${SERVER_IP:-localhost}:${KAFKA_PLAIN_PORT:-${KAFKA_PORT:-
 echo "   Kafka GSSAPI: ${SERVER_IP:-localhost}:${KAFKA_GSSAPI_PORT:-9094}"
 echo "=========================================================="
 
+# -----------------------------------------------------------------------------
+# Tự động lấy client.keytab mới nhất từ container KDC (nếu có Docker)
+# -----------------------------------------------------------------------------
+mkdir -p "$PROJECT_ROOT/docker/krb5"
+if command -v docker >/dev/null 2>&1; then
+    KDC_CONTAINER="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '(^|_)kdc($|_)' | head -n 1 || true)"
+    if [ -n "$KDC_CONTAINER" ]; then
+        echo "🔑 Đang đồng bộ client.keytab mới nhất từ container '$KDC_CONTAINER'..."
+        if docker cp "$KDC_CONTAINER:/var/lib/secret/client.keytab" "$PROJECT_ROOT/docker/krb5/client.keytab" 2>/dev/null; then
+            echo "   ✅ Đã cập nhật keytab: docker/krb5/client.keytab"
+        fi
+    elif [ -n "${SSH_USER:-}" ] && [ "${SERVER_IP:-localhost}" != "localhost" ] && [ "${SERVER_IP:-localhost}" != "127.0.0.1" ]; then
+        echo "🔑 Đang đồng bộ client.keytab từ remote server ${SERVER_IP} qua SSH (${SSH_USER})..."
+        ssh -o ConnectTimeout=3 -o BatchMode=yes "${SSH_USER}@${SERVER_IP}" "docker cp kdc:/var/lib/secret/client.keytab -" > "$PROJECT_ROOT/docker/krb5/client.keytab" 2>/dev/null && \
+            echo "   ✅ Đã cập nhật keytab từ remote server." || true
+    fi
+fi
+
 # Tự động compile và chạy Java Main
 mvn compile exec:java -pl data-simulator -f "$PROJECT_ROOT/pom.xml" \
     -Dexec.mainClass="com.vdf.streaming.event.EventSimulatorMain" \
