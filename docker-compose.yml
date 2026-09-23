@@ -45,8 +45,9 @@ services:
 
 
   # ============================================================
-  # Kafka
+  # Kafka UI
   # ============================================================
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -85,6 +86,7 @@ services:
     networks:
       - cluster-network
     restart: unless-stopped
+
 
   # ============================================================
   # Kerberos KDC (for Kafka GSSAPI)
@@ -213,7 +215,7 @@ services:
 
       # Listeners
       KAFKA_LISTENERS: INTERNAL://kafka-gssapi:29094,EXTERNAL://0.0.0.0:9094,CONTROLLER://kafka-gssapi:9095
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-gssapi:29094,EXTERNAL://${SERVER_IP:-localhost}:${KAFKA_GSSAPI_PORT:-9094}
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-gssapi:29094,EXTERNAL://${KAFKA_GSSAPI_ADVERTISED_HOST:-kafka-gssapi}:${KAFKA_GSSAPI_PORT:-9094}
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -387,6 +389,7 @@ services:
       - cluster-network
     restart: unless-stopped
 
+
   # ============================================================
   # MongoDB Single-Node Replica Set (for CDC Change Streams)
   # ============================================================
@@ -440,6 +443,7 @@ services:
         '
         echo ">>> MongoDB Replica Set check completed!"
 
+
   # ============================================================
   # Mongo Express UI
   # ============================================================
@@ -461,9 +465,10 @@ services:
       ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
       ME_CONFIG_BASICAUTH: "false"
     ports:
-      - "${MONGO_EXPRESS_PORT:-8085}:8081"   # Tránh trùng port 8081 của Flink JobManager
+      - "${MONGO_EXPRESS_PORT:-8085}:8081"
     networks:
       - cluster-network
+
 
   # ============================================================
   # Flink JobManager
@@ -686,9 +691,11 @@ services:
       - cluster-network
     restart: unless-stopped
 
+
   # ============================================================
-  # AUTO-INIT 1: Kafka Topics Initializer (Mounting Shell Script)
+  # AUTO-INIT 1: Kafka Topics Initializer
   # ============================================================
+
   kafka-topics-init:
     image: apache/kafka:3.9.1
     container_name: kafka-topics-init
@@ -706,9 +713,11 @@ services:
       - cluster-network
     entrypoint: [ "/bin/bash", "/usr/local/bin/create-kafka-topics.sh" ]
 
+
   # ============================================================
   # AUTO-INIT 2: Debezium Connectors Auto-Registration
   # ============================================================
+
   debezium-init:
     image: curlimages/curl:latest
     container_name: debezium-init
@@ -760,6 +769,7 @@ services:
         
         echo ""
         echo ">>> All connectors have been successfully provisioned!"
+
 
 # ================================================================
 # Volumes
