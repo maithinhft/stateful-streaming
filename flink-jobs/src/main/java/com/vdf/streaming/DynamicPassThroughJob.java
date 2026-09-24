@@ -1,12 +1,10 @@
-package flink;
+package com.vdf.streaming;
 
-import flink.config.KafkaClusterConfig;
-import flink.dynamic.metadata.PostgresKafkaMetadataService;
+import com.vdf.streaming.config.KafkaClusterConfig;
+import com.vdf.streaming.dynamic.metadata.PostgresKafkaMetadataService;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.java.utils.ParameterTool;
-import org.apache.flink.configuration.CheckpointingOptions;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.dynamic.source.DynamicKafkaSource;
 import org.apache.flink.connector.kafka.dynamic.source.DynamicKafkaSourceOptions;

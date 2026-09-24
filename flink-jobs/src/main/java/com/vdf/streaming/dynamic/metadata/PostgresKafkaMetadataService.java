@@ -1,4 +1,4 @@
-package flink.dynamic.metadata;
+package com.vdf.streaming.dynamic.metadata;
 
 import org.apache.flink.connector.kafka.dynamic.metadata.ClusterMetadata;
 import org.apache.flink.connector.kafka.dynamic.metadata.KafkaMetadataService;
