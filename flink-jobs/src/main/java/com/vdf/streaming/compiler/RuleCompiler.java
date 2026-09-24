@@ -140,6 +140,7 @@ public class RuleCompiler {
                     .ruleName(ruleName)
                     .ruleVersion(ruleVersion)
                     .cooldownSeconds(event.cooldownSeconds())
+                    .cdcVersion(event.version())
                     .triggers(triggers)
                     .conditionTree(conditionTree)
                     .ruleType(ruleType)

@@ -150,6 +150,17 @@ public class InvertedIndexManager implements Serializable {
     }
 
     /**
+     * Lấy rule từ slotManager bằng ruleId.
+     */
+    public CompiledRuleEnvelope getRuleById(String ruleId) {
+        int slotId = slotManager.getSlotId(ruleId);
+        if (slotId != -1) {
+            return slotManager.getRule(slotId);
+        }
+        return null;
+    }
+
+    /**
      * Lấy rule từ slotManager bằng slotId.
      */
     public CompiledRuleEnvelope getRule(int slotId) {
@@ -168,5 +179,17 @@ public class InvertedIndexManager implements Serializable {
      */
     public String buildIndexKey(String source, String schemaVersion) {
         return source + ":" + schemaVersion;
+    }
+
+    public void printDebugInfo() {
+//        System.out.println("\n========== BÁO CÁO INVERTED INDEX ==========");
+//        System.out.println("Tổng số Slot đã cấp phát (maxAllocatedIndex): " + slotManager.getMaxAllocatedIndex());
+//        System.out.println("Các Slot đang trống (đã xóa): " + slotManager.getFreeSlotsBitmap().toString());
+//        System.out.println("Các tập SourceVersionIndex:");
+//        for (Map.Entry<String, SourceVersionIndex> entry : indexMap.entrySet()) {
+//            System.out.println("  [+] " + entry.getKey());
+//            entry.getValue().printDebugInfo();
+//        }
+        System.out.println("=============================================\n");
     }
 }

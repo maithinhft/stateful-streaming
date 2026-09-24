@@ -16,6 +16,7 @@ public class CompiledRuleEnvelope implements Serializable {
     private List<CompiledTriggerCriteria> triggers;
     private ConditionNode conditionTree;
     private long cooldownSeconds;
+    private long cdcVersion;
     private Map<String, Object> metadata;
 
     public CompiledRuleEnvelope() {}
@@ -29,6 +30,7 @@ public class CompiledRuleEnvelope implements Serializable {
         this.triggers = builder.triggers;
         this.conditionTree = builder.conditionTree;
         this.cooldownSeconds = builder.cooldownSeconds;
+        this.cdcVersion = builder.cdcVersion;
         this.metadata = builder.metadata;
     }
 
@@ -56,6 +58,9 @@ public class CompiledRuleEnvelope implements Serializable {
     public long getCooldownSeconds() { return cooldownSeconds; }
     public void setCooldownSeconds(long cooldownSeconds) { this.cooldownSeconds = cooldownSeconds; }
 
+    public long getCdcVersion() { return cdcVersion; }
+    public void setCdcVersion(long cdcVersion) { this.cdcVersion = cdcVersion; }
+
     public Map<String, Object> getMetadata() { return metadata; }
     public void setMetadata(Map<String, Object> metadata) { this.metadata = metadata; }
 
@@ -70,6 +75,7 @@ public class CompiledRuleEnvelope implements Serializable {
                 ", triggers=" + triggers +
                 ", conditionTree=" + conditionTree +
                 ", cooldownSeconds=" + cooldownSeconds +
+                ", cdcVersion=" + cdcVersion +
                 ", metadata=" + metadata +
                 '}';
     }
@@ -87,6 +93,7 @@ public class CompiledRuleEnvelope implements Serializable {
         private List<CompiledTriggerCriteria> triggers;
         private ConditionNode conditionTree;
         private long cooldownSeconds;
+        private long cdcVersion;
         private Map<String, Object> metadata;
 
         public Builder ruleId(String ruleId) {
@@ -126,6 +133,11 @@ public class CompiledRuleEnvelope implements Serializable {
 
         public Builder cooldownSeconds(long cooldownSeconds) {
             this.cooldownSeconds = cooldownSeconds;
+            return this;
+        }
+
+        public Builder cdcVersion(long cdcVersion) {
+            this.cdcVersion = cdcVersion;
             return this;
         }
 
