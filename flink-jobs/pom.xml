@@ -97,6 +97,20 @@
             <version>42.7.7</version>
         </dependency>
 
+        <!-- RoaringBitmap -->
+        <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
+            <version>1.3.0</version>
+        </dependency>
+
+        <!-- zero-allocation-hashing (xxHash64) -->
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>zero-allocation-hashing</artifactId>
+            <version>0.16</version>
+        </dependency>
+
         <!-- ===================================================== -->
         <!-- Testing -->
         <!-- ===================================================== -->
