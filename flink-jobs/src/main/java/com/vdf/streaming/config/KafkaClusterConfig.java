@@ -1,4 +1,4 @@
-package flink.config;
+package com.vdf.streaming.config;
 
 import org.apache.flink.api.java.utils.ParameterTool;
 

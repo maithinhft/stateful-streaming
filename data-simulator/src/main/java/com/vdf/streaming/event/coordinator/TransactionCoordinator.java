@@ -16,7 +16,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class TransactionCoordinator {
     private final CustomerPool customerPool;
-    private final Random rand;
     private final AtomicInteger financeIdCounter = new AtomicInteger(1000);
     private final AtomicInteger requestIdCounter = new AtomicInteger(5000);
 
@@ -37,7 +36,6 @@ public class TransactionCoordinator {
 
     public TransactionCoordinator(CustomerPool customerPool, Random rand) {
         this.customerPool = customerPool;
-        this.rand = rand;
 
         // Đăng ký toàn bộ 9 generator tương ứng 9 nguồn yêu cầu
         generators.add(new V1InsertTransDailyHisGenerator());
