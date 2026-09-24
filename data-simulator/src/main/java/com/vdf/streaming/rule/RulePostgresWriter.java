@@ -45,7 +45,7 @@ public class RulePostgresWriter {
 
     private static final String INSERT_SQL = """
             INSERT INTO rule_definitions (rule_id, name, rule_json, cooldown_seconds, version, enabled, user_id)
-            VALUES (?::uuid, ?, ?::jsonb, ?, ?, ?, ?)
+            VALUES (?, ?, ?::jsonb, ?, ?, ?, ?)
             ON CONFLICT (rule_id, version) DO UPDATE SET
                 name = EXCLUDED.name,
                 rule_json = EXCLUDED.rule_json,
@@ -102,7 +102,7 @@ public class RulePostgresWriter {
                 for (int i = 0; i < totalRules; i++) {
                     JsonNode rule = rootNode.get(i);
 
-                    String ruleId = UUID.randomUUID().toString();
+                    String ruleId = rule.get("rule_id").asText();
                     String name = rule.get("rule_name").asText();
                     String ruleJson = mapper.writeValueAsString(rule);
                     long cooldownSeconds = (long) (Math.random() * 3600);

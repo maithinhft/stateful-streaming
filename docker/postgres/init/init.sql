@@ -19,7 +19,7 @@ GRANT CONNECT ON DATABASE realtime_core TO replicator;
 CREATE TABLE IF NOT EXISTS rule_definitions (
     id BIGSERIAL PRIMARY KEY,
 
-    rule_id UUID NOT NULL,
+    rule_id VARCHAR(255) NOT NULL,
 
     name VARCHAR(255) NOT NULL,
 
