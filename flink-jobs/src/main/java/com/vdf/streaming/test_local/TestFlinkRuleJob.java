@@ -61,26 +61,40 @@ public class TestFlinkRuleJob {
         env.fromSource(source, WatermarkStrategy.noWatermarks(), "Kafka Rule Source")
            .process(new ProcessFunction<String, String>() {
                private transient RuleCompiler compiler;
+               private transient com.vdf.streaming.index.InvertedIndexManager indexManager;
 
                @Override
                public void open(org.apache.flink.configuration.Configuration parameters) throws Exception {
                    compiler = new RuleCompiler();
+                   indexManager = new com.vdf.streaming.index.InvertedIndexManager();
                }
 
                @Override
                public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
-                   // Flink sẽ in ra log của TaskManager (xem qua Web UI hoặc docker logs)
                    System.out.println("\n[FLINK-TASKMANAGER NHẬN RULE]: " + value);
                    try {
                        RuleCompiler.CdcRuleEvent cdcEvent = compiler.parseCdcEvent(value);
                        if (compiler.isDelete(cdcEvent)) {
                            System.out.println(" => Sự kiện XÓA/VÔ HIỆU HÓA Rule: " + cdcEvent.ruleId());
-                           return;
+                           indexManager.unregisterRule(cdcEvent.ruleId());
+                       } else {
+                           CompiledRuleEnvelope rule = compiler.compile(cdcEvent, -1);
+                           System.out.println(" => [THÀNH CÔNG] Parse rule hợp lệ: " + rule.getRuleName());
+                           
+                           // Đăng ký hoặc Update rule vào Inverted Index
+                           if (cdcEvent.op() != null && cdcEvent.op().equals("u")) {
+                               indexManager.updateRule(rule);
+                           } else {
+                               indexManager.registerRule(rule);
+                           }
                        }
-                       CompiledRuleEnvelope rule = compiler.compile(cdcEvent, -1);
-                       System.out.println(" => [THÀNH CÔNG] Parse rule hợp lệ: " + rule.getRuleName());
+                       
+                       // In ra màn hình cấu trúc của Inverted Index hiện tại
+                       indexManager.printDebugInfo();
+                       
                    } catch (Exception e) {
-                       System.err.println(" => [LỖI] Parse thất bại: " + e.getMessage());
+                       System.err.println(" => [LỖI] Parse hoặc Index thất bại: " + e.getMessage());
+                       e.printStackTrace();
                    }
                }
            })
