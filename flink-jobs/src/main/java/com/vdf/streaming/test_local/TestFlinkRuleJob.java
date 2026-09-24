@@ -74,6 +74,11 @@ public class TestFlinkRuleJob {
                    System.out.println("\n[FLINK-TASKMANAGER NHẬN RULE]: " + value);
                    try {
                        RuleCompiler.CdcRuleEvent cdcEvent = compiler.parseCdcEvent(value);
+                       CompiledRuleEnvelope existingRule = indexManager.getRuleById(cdcEvent.ruleId());
+                       if (existingRule != null && existingRule.getCdcVersion() >= cdcEvent.version()) {
+                           System.out.println(" => [BỎ QUA] Rule " + cdcEvent.ruleId() + " đã có bản mới hơn hoặc bằng (Hiện tại: " + existingRule.getCdcVersion() + ", Nhận được: " + cdcEvent.version() + ")");
+                           return;
+                       }
                        if (compiler.isDelete(cdcEvent)) {
                            System.out.println(" => Sự kiện XÓA/VÔ HIỆU HÓA Rule: " + cdcEvent.ruleId());
                            indexManager.unregisterRule(cdcEvent.ruleId());

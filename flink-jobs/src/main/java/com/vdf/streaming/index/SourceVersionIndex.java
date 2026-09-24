@@ -125,4 +125,12 @@ public class SourceVersionIndex implements Serializable {
     public SourceVersionIndex deepCopy() {
         return new SourceVersionIndex(this.exactIndex, this.complexIndex);
     }
+
+    public void printDebugInfo() {
+        System.out.println("      * exactIndex (keys=" + exactIndex.size() + "):");
+        for (Map.Entry<String, RoaringBitmap> entry : exactIndex.entrySet()) {
+            System.out.println("        - " + entry.getKey() + " -> Slots: " + entry.getValue().toString());
+        }
+        System.out.println("      * complexIndex -> Slots: " + complexIndex.toString());
+    }
 }
