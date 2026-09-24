@@ -25,6 +25,15 @@ PLAIN_TOPICS=(
   "PMT-TRANSACTION-SYNC-CMD:6"
   "result:6"
   "dlq:6"
+  # === Batch Event Topics (B1, B2, B4, B5) ===
+  "batch_trial_0d_registered:3"
+  "batch_renewed_subscribers:3"
+  "batch_active_promo_packages:3"
+  "batch_blacklist_qtrr:3"
+  "batch_simfarm_3_tram:3"
+  "batch_cep_pushed_msisdn:3"
+  "batch_vip_customer_list:3"
+  "dlq_batch_events:3"
 )
 
 for item in "${PLAIN_TOPICS[@]}"; do

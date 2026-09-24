@@ -379,4 +379,68 @@ Một giao dịch (transaction) được điều phối phát sinh trên 8–9 n
 ./scripts/run-event-simulator.sh --mode stream --rate 1200 --threads 4
 ```
 
+---
+
+## 10. Trình Giả Lập Dữ Liệu Batch Event (Batch Data Simulator)
+
+### 10.1. Mục Tiêu & Vai Trò Nghiệp Vụ
+Để phục vụ các bài toán xử lý trạng thái **Look-up dữ liệu nền tảng (Bài toán B1, B2, B4, B5)** trong Flink Stateful Streaming Rule Engine, module `data-simulator` được mở rộng với luồng **Batch Data Simulator** độc lập (`BatchSimulatorMain.java`).
+
+Khác với luồng Stream liên tục (mô phỏng từng giao dịch phát sinh), luồng Batch mô phỏng các mẻ trích xuất dữ liệu định kỳ (Snapshot) từ Data Warehouse / Hive / Spark ETL và đẩy vào các Kafka topic riêng biệt trên cụm `kafka-plain` để nạp vào RocksDB Keyed State.
+
+### 10.2. Bảng Danh Mục 7 Nguồn Batch & Ánh Xạ SQL Nghiệp Vụ
+
+Tất cả các nguồn batch đều được tinh gọn dữ liệu, **khớp chính xác với các cột được chiếu (SELECT) từ các câu truy vấn SQL thực tế**:
+
+| STT | Bài Toán | Nguồn (dataset_name) | Kafka Topic | Cột SELECT từ SQL Nghiệp Vụ | Cấu Trúc Dữ Liệu Trong `data` |
+|:---:|:--------:|:---------------------|:------------|:---------------------------:|:------------------------------|
+| 1 | **B1** | `trial_0d_registered` (ĐK2) | `batch_trial_0d_registered` | `msisdn`, `sub_code` | `{"sub_code": "VTM2"}` |
+| 2 | **B1** | `renewed_subscribers` (ĐK3) | `batch_renewed_subscribers` | `msisdn`, `sub_code` | `{"sub_code": "VTM2"}` |
+| 3 | **B2** | `active_promo_packages` | `batch_active_promo_packages` | `msisdn`, `sub_code` | `{"sub_code": "VTM1"}` |
+| 4 | **B4** | `blacklist_qtrr` | `batch_blacklist_qtrr` | `msisdn` | `{}` *(Tập thuần khóa)* |
+| 5 | **B4** | `simfarm_3_tram` | `batch_simfarm_3_tram` | `msisdn` | `{}` *(Tập thuần khóa)* |
+| 6 | **B4** | `cep_pushed_msisdn` | `batch_cep_pushed_msisdn` | `msisdn` | `{}` *(Tập thuần khóa)* |
+| 7 | **B5** | `vip_customer_list` | `batch_vip_customer_list` | `msisdn` | `{}` *(Tập thuần khóa)* |
+
+### 10.3. Cấu Trúc Bản Tin Batch Event Envelope
+Mỗi bản tin tuân thủ chuẩn Batch Event Envelope:
+- **Khóa định danh (`key_field` / `key_value`)**: Số điện thoại được tự động chuẩn hóa về định dạng quốc tế E.164 (`+84xxxxxxxxx`).
+- **Chế độ đồng bộ (`sync_mode`)**: Mặc định `FULL_SNAPSHOT`.
+- **Nhóm có thuộc tính (`sub_code`)**: Áp dụng cho B1 (các gói trial `VTM1`, `VTM2`, `VTM4`, `VTM5`, `VTM6`) và B2 (`VTM1` - `VTM4`).
+- **Nhóm thuần khóa (Pure Key / Set Membership)**: Áp dụng cho B4 (loại trừ blacklist, simfarm, tập đã đẩy CEP) và B5 (lọc giữ lại KH VIP). Trường `data` là `{}` (rỗng) vì việc khách hàng có mặt trong mẻ batch đại diện cho trạng thái thành viên của tập hợp.
+
+### 10.4. Cấu Trúc Thư Mục Mã Nguồn Batch
+```
+data-simulator/src/main/java/com/vdf/streaming/event/
+├── BatchSimulatorMain.java               # CLI Entrypoint cho luồng Batch
+└── batch/
+    ├── BatchDatasetGenerator.java        # Interface chuẩn cho các batch generator
+    ├── BatchEnvelopeBuilder.java         # Utility đóng gói JSON Envelope
+    ├── BatchCustomerPool.java            # Quản lý phân bổ tập KH thực tế
+    ├── TrialRegisteredGenerator.java     # B1 ĐK2 (msisdn, sub_code)
+    ├── RenewedSubscribersGenerator.java  # B1 ĐK3 (msisdn, sub_code)
+    ├── ActivePromoPackagesGenerator.java # B2 (msisdn, sub_code)
+    ├── BlacklistQtrrGenerator.java       # B4 Blacklist QTRR (msisdn)
+    ├── SimfarmGenerator.java             # B4 Simfarm 3 trạm (msisdn)
+    ├── CepPushedMsisdnGenerator.java    # B4 29923_CEP (msisdn)
+    └── VipCustomerListGenerator.java     # B5 KH vị thế (msisdn)
+```
+
+### 10.5. Hướng Dẫn Sử Dụng `run-batch-simulator.sh`
+
+```bash
+# 1. Sinh toàn bộ 7 datasets ở chế độ Dry-run (kiểm tra log console)
+./scripts/run-batch-simulator.sh --dry-run
+
+# 2. Sinh và xuất file JSONL phục vụ kiểm thử
+./scripts/run-batch-simulator.sh --output-dir local/data/batch/ --dry-run
+
+# 3. Chỉ sinh các dataset của bài toán B4 (Blacklist & Simfarm)
+./scripts/run-batch-simulator.sh --datasets blacklist_qtrr,simfarm_3_tram --dry-run
+
+# 4. Gửi trực tiếp lên cụm Kafka PLAIN thật (cổng 9092)
+./scripts/run-batch-simulator.sh
+```
+
+
 
