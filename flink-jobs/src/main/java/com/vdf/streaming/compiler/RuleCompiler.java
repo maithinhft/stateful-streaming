@@ -117,7 +117,8 @@ public class RuleCompiler {
                                         fields.add(condNode.path("field").asText());
                                     }
 
-                                    andConditions.add(new TriggerCondition(fields, op, value, datasetId, datasetVersion));
+                                    String singleField = fields.isEmpty() ? null : fields.get(0);
+                                    andConditions.add(new TriggerCondition(singleField, fields, op, value, datasetId, datasetVersion));
                                 }
                             }
                             conditions.add(andConditions);
@@ -134,16 +135,16 @@ public class RuleCompiler {
             // Phân loại RuleType
             RuleType ruleType = classifyRuleType(conditionTree);
 
-            return new CompiledRuleEnvelope(
-                    ruleId,
-                    ruleName,
-                    ruleVersion,
-                    event.cooldownSeconds(),
-                    triggers,
-                    conditionTree,
-                    ruleType,
-                    slotId
-            );
+            return CompiledRuleEnvelope.builder()
+                    .ruleId(ruleId)
+                    .ruleName(ruleName)
+                    .ruleVersion(ruleVersion)
+                    .cooldownSeconds(event.cooldownSeconds())
+                    .triggers(triggers)
+                    .conditionTree(conditionTree)
+                    .ruleType(ruleType)
+                    .slotId(slotId)
+                    .build();
 
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Lỗi khi parse rule_json", e);
@@ -189,31 +190,40 @@ public class RuleCompiler {
                     String datasetId = exprNode.path("dataset_id").asText(null);
                     String datasetVersion = exprNode.path("dataset_version").asText(null);
 
-                    expression = new Expression(fields, op, value, datasetId, datasetVersion);
+                    expression = new Expression(fields.isEmpty() ? null : fields.get(0), null, null, op, value, null, null, null, fields, null);
                 }
                 yield new ConditionLeafNode(expression);
             }
             case "SEQUENCE" -> {
                 String pattern = node.path("pattern").asText(null);
-                long minTime = node.path("min_time").asLong(0);
-                long maxTime = node.path("max_time").asLong(0);
+                int minTime = node.path("min_time").asInt(0);
+                int maxTime = node.path("max_time").asInt(0);
                 String timeUnit = node.path("time_unit").asText(null);
 
-                List<String> joinKeys = new ArrayList<>();
+                List<JoinKey> joinKeys = new ArrayList<>();
                 JsonNode joinKeysNode = node.path("join_keys");
                 if (joinKeysNode.isArray()) {
                     for (JsonNode kNode : joinKeysNode) {
-                        joinKeys.add(kNode.asText());
+                        joinKeys.add(new JoinKey(kNode.path("left_field").asText(null), kNode.path("right_field").asText(null)));
                     }
                 }
 
-                ConditionNode first = parseConditionNode(node.path("first"));
-                ConditionNode second = parseConditionNode(node.path("second"));
+                EventFilter first = parseEventFilter(node.path("first"));
+                EventFilter second = parseEventFilter(node.path("second"));
 
                 yield new SequenceNode(pattern, minTime, maxTime, timeUnit, joinKeys, first, second);
             }
             default -> throw new IllegalArgumentException("Loại ConditionNode không hợp lệ: " + type);
         };
+    }
+
+    private EventFilter parseEventFilter(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        String source = node.path("source").asText(null);
+        List<TriggerCondition> filters = new ArrayList<>();
+        return new EventFilter(source, filters);
     }
 
     private RuleType classifyRuleType(ConditionNode node) {
@@ -239,7 +249,7 @@ public class RuleCompiler {
 
         if (node instanceof ConditionLeafNode leaf) {
             Expression expr = leaf.expression();
-            if (expr != null && "IS_FIRST_ARRIVAL".equalsIgnoreCase(expr.op())) {
+            if (expr != null && "IS_FIRST_ARRIVAL".equalsIgnoreCase(expr.getOp())) {
                 return true;
             }
         }
@@ -259,11 +269,11 @@ public class RuleCompiler {
         if (node instanceof ConditionLeafNode leaf) {
             Expression expr = leaf.expression();
             if (expr != null) {
-                if ("IN_DATASET".equalsIgnoreCase(expr.op())) {
+                if ("IN_DATASET".equalsIgnoreCase(expr.getOp())) {
                     return true;
                 }
-                if (expr.fields() != null) {
-                    for (String field : expr.fields()) {
+                if (expr.getKeyFields() != null) {
+                    for (String field : expr.getKeyFields()) {
                         // Kiểm tra nếu field chứa dấu chấm (.) biểu thị việc truy xuất dữ liệu từ các source/dataset khác
                         if (field != null && field.contains(".")) {
                             return true;
@@ -282,7 +292,7 @@ public class RuleCompiler {
         }
 
         if (node instanceof SequenceNode seq) {
-            return hasStatefulFeatures(seq.first()) || hasStatefulFeatures(seq.second());
+            return true;
         }
 
         return false;

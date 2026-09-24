@@ -8,8 +8,8 @@ import java.util.Map;
 import org.roaringbitmap.RoaringBitmap;
 
 import com.vdf.streaming.models.CompiledRuleEnvelope;
-import com.vdf.streaming.models.RuleCondition;
-import com.vdf.streaming.models.RuleTrigger;
+import com.vdf.streaming.models.CompiledTriggerCriteria;
+import com.vdf.streaming.models.TriggerCondition;
 
 /**
  * Trình quản lý cấp cao điều phối tất cả các đối tượng SourceVersionIndex.
@@ -48,15 +48,19 @@ public class InvertedIndexManager implements Serializable {
         slotManager.setRule(slotId, rule);
 
         if (rule.getTriggers() != null) {
-            for (RuleTrigger trigger : rule.getTriggers()) {
+            for (CompiledTriggerCriteria trigger : rule.getTriggers()) {
                 String key = buildIndexKey(trigger.getSource(), trigger.getSchemaVersion());
                 SourceVersionIndex index = indexMap.computeIfAbsent(key, k -> new SourceVersionIndex());
                 
-                if (trigger.getConditions() != null) {
-                    for (RuleCondition condition : trigger.getConditions()) {
-                        String field = condition.getField();
-                        String operator = condition.getOperator();
-                        Object value = condition.getValue();
+                if (trigger.getDnfConditions() != null) {
+                    for (List<TriggerCondition> andConditions : trigger.getDnfConditions()) {
+                        for (TriggerCondition condition : andConditions) {
+                            String field = condition.getField();
+                            if (field == null && condition.getFields() != null && !condition.getFields().isEmpty()) {
+                                field = condition.getFields().get(0);
+                            }
+                            String operator = condition.getOp();
+                            Object value = condition.getValue();
                         
                         if (operator == null) continue;
 
@@ -98,6 +102,7 @@ public class InvertedIndexManager implements Serializable {
                 }
             }
         }
+    }
     }
 
     /**
