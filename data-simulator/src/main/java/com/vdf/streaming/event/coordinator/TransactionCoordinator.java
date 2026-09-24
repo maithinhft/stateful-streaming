@@ -37,7 +37,7 @@ public class TransactionCoordinator {
     public TransactionCoordinator(CustomerPool customerPool, Random rand) {
         this.customerPool = customerPool;
 
-        // Đăng ký toàn bộ 9 generator tương ứng 9 nguồn yêu cầu
+        // Đăng ký toàn bộ 10 generator tương ứng 10 nguồn sự kiện
         generators.add(new V1InsertTransDailyHisGenerator());
         generators.add(new V1UpdateTransDailyHisGenerator());
         generators.add(new P1EventTrackingGenerator());
@@ -47,10 +47,11 @@ public class TransactionCoordinator {
         generators.add(new CdcnLogCentralProdGenerator());
         generators.add(new AdsThirdPartyGiftDataResultCmdGenerator());
         generators.add(new CoreRechargeHistoryGenerator());
+        generators.add(new PmtTransactionSyncCmdGenerator());
     }
 
     /**
-     * Tạo 1 giao dịch mới theo kịch bản ngẫu nhiên và sinh toàn bộ sự kiện liên quan trên 9 nguồn.
+     * Tạo 1 giao dịch mới theo kịch bản ngẫu nhiên và sinh toàn bộ sự kiện liên quan trên 10 nguồn.
      */
     public List<EventRecord> generateTransactionEvents(Set<String> filterTopics) {
         ThreadLocalRandom localRand = ThreadLocalRandom.current();

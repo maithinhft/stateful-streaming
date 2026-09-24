@@ -4,7 +4,7 @@
 
 Trình giả lập sự kiện thời gian thực (**Realtime Event Simulator**) được xây dựng trong module `data-simulator` nhằm phục vụ các mục tiêu cốt lõi:
 - **Kiểm thử hệ thống Stateful Streaming & Rule Engine**: Sinh dữ liệu mô phỏng liên tục dòng sự kiện thanh toán, viễn thông, nạp tiền ví điện tử để kiểm thử các bài toán xử lý trạng thái (Deduplication đa nguồn, Sequence `NOT_FOLLOWED_BY`, Phát hiện giao dịch đứt gãy).
-- **Phủ đủ 9 nguồn dữ liệu nghiệp vụ** phân bổ trên **2 cụm Kafka độc lập** với 2 cơ chế bảo mật khác nhau (`SASL_PLAINTEXT / PLAIN` và `SASL_PLAINTEXT / GSSAPI Kerberos`).
+- **Phủ đủ 10 nguồn dữ liệu nghiệp vụ** phân bổ trên **2 cụm Kafka độc lập** với 2 cơ chế bảo mật khác nhau (`SASL_PLAINTEXT / PLAIN` và `SASL_PLAINTEXT / GSSAPI Kerberos`).
 - **Đảm bảo tính tương quan dữ liệu xuyên nguồn (Cross-Source Correlation)**: Các sự kiện thuộc cùng một giao dịch được liên kết chặt chẽ qua các trường khóa (`orderId`, `requestId`, `transDailyHisFinanceId`, `msisdn`, `amount`, `status`).
 - **Mô phỏng 7 kịch bản nghiệp vụ thực tế** (từ luồng giao dịch thành công, số dư không đủ, timeout đối tác, hiệu chỉnh giao dịch đến dữ liệu biên/lỗi).
 - **Linh hoạt trong vận hành**: Hỗ trợ đẩy sự kiện Realtime Streaming, xuất file JSONL phục vụ replay kiểm thử, và chế độ Dry-run an toàn.
@@ -38,8 +38,9 @@ Trình giả lập sự kiện thời gian thực (**Realtime Event Simulator**)
 │                      │                  │  - CDCN_LOG_CENTRAL  │
 │                      │                  │  - ADS-GIFT-RESULT   │
 │                      │                  │  - CORE-RECHARGE-HIS │
+│                      │                  │  - PMT-SYNC-CMD(CPM) │
 └──────────┬───────────┘                  └──────────┬───────────┘
-           │ 3 topics                                │ 6 topics
+           │ 3 topics                                │ 7 topics
            ▼                                         ▼
 ┌────────────────────────────────────────────────────────────────┐
 │                     KafkaSimulatorProducer                     │
@@ -57,7 +58,7 @@ data-simulator/src/main/java/com/vdf/streaming/event/
 ├── EventSimulatorMain.java                   # CLI Entrypoint, cấu hình tham số dòng lệnh
 ├── coordinator/
 │   ├── CustomerPool.java                     # Pool 150 khách hàng cố định với dữ liệu thực tế
-│   └── TransactionCoordinator.java           # Phối hợp kịch bản và điều phối 9 generators
+│   └── TransactionCoordinator.java           # Phối hợp kịch bản và điều phối 10 generators
 ├── model/
 │   ├── Customer.java                         # Entity khách hàng (Phone, CCCD, Bank, Balance, Device)
 │   ├── Scenario.java                         # Enum 7 kịch bản nghiệp vụ kèm tỉ lệ phân bổ
@@ -73,7 +74,8 @@ data-simulator/src/main/java/com/vdf/streaming/event/
 │   ├── HistoryServiceInsertHbaseObjectGenerator.java  # Nguồn 6: Lịch sử nạp/thanh toán theo đối tượng
 │   ├── CdcnLogCentralProdGenerator.java      # Nguồn 7: Gateway access log tập trung
 │   ├── AdsThirdPartyGiftDataResultCmdGenerator.java   # Nguồn 8: Callback tặng gói/quà bên thứ 3
-│   └── CoreRechargeHistoryGenerator.java     # Nguồn 9: Lịch sử nạp tiền ví từ ngân hàng liên kết
+│   ├── CoreRechargeHistoryGenerator.java     # Nguồn 9: Lịch sử nạp tiền ví từ ngân hàng liên kết
+│   └── PmtTransactionSyncCmdGenerator.java   # Nguồn 10: Đồng bộ xác nhận GD (CPM cho bài toán A1)
 └── kafka/
     ├── KafkaClusterType.java                 # Enum định danh cụm: PLAIN vs GSSAPI
     └── KafkaSimulatorProducer.java           # Quản lý Producer 2 cụm, bảo mật JAAS, kết nối
@@ -81,9 +83,9 @@ data-simulator/src/main/java/com/vdf/streaming/event/
 
 ---
 
-## 3. Danh mục 9 Nguồn Dữ liệu & Phân bổ Cụm Kafka
+## 3. Danh mục 10 Nguồn Dữ liệu & Phân bổ Cụm Kafka
 
-Toàn bộ 9 nguồn sự kiện được phân bổ vào 2 cụm Kafka với cơ chế xác thực riêng biệt:
+Toàn bộ 10 nguồn sự kiện được phân bổ vào 2 cụm Kafka với cơ chế xác thực riêng biệt:
 
 | STT | Nguồn / Kafka Topic | Cụm Kafka | Giao thức & Xác thực | Định dạng Payload | Partition Key | Ý nghĩa nghiệp vụ |
 |---|---|---|---|---|---|---|
@@ -96,6 +98,7 @@ Toàn bộ 9 nguồn sự kiện được phân bổ vào 2 cụm Kafka với c�
 | 7 | `cdcn_log_central_prod` | `kafka-plain` | SASL_PLAINTEXT (PLAIN) | JSON Flat | `msisdn` | Nhật ký truy cập API Gateway tập trung (Audit, Trace) |
 | 8 | `ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD` | `kafka-plain` | SASL_PLAINTEXT (PLAIN) | JSON Nested (`data.request.processDate`) | `msisdn` | Phản hồi kết quả xử lý từ hệ thống đối tác thứ 3 |
 | 9 | `core-recharge-history` | `kafka-plain` | SASL_PLAINTEXT (PLAIN) | JSON Flat | `msisdn` | Đối soát nạp tiền ví từ tài khoản ngân hàng liên kết |
+| 10 | `PMT-TRANSACTION-SYNC-CMD` | `kafka-plain` | SASL_PLAINTEXT (PLAIN) | JSON Nested (`data.request.content`) | `msisdn` | Đồng bộ/xác nhận GD thanh toán (Nguồn CPM phục vụ bài toán A1) |
 
 ---
 
@@ -249,6 +252,17 @@ Simulator phân bổ giao dịch theo 7 kịch bản xác suất, phản ánh ch
 ### 6.7. `CoreRechargeHistoryGenerator`
 - **Topic**: `core-recharge-history` (Cụm `kafka-plain`)
 - **Nghiệp vụ**: Đối soát nạp tiền ví từ ngân hàng liên kết, đồng bộ trạng thái trích nợ ngân hàng (`debitStatus`) và trạng thái cộng tiền ví (`rechargeStatus`).
+
+### 6.8. `PmtTransactionSyncCmdGenerator` (Nguồn CPM — Core Payment)
+- **Topic**: `PMT-TRANSACTION-SYNC-CMD` (Cụm `kafka-plain`)
+- **Nghiệp vụ**: Luồng đồng bộ và xác nhận trạng thái giao dịch (`cmd: DONG_BO_GIAO_DICH`), là nguồn **CPM** trực tiếp tham gia bài toán **A1 (RT_PSGD thứ 2 — Deduplication đa nguồn)** cùng với TDH, EVT, và GNOTI.
+- **Đặc trưng dữ liệu**:
+  - `data.request.originalRequestId`: Khóa liên kết trỏ ngược về `requestId` của giao dịch lõi (`V1-INSERT-TRANS-DAILY-HIS`).
+  - `data.paymentId`: Mã định danh thanh toán duy nhất (`PMT...`), luôn có giá trị.
+  - `data.request.detailSources`: Chứa mảng nguồn thanh toán kèm `clientRequestId` phục vụ đối soát giao dịch.
+  - `data.request.content`: Khối dữ liệu chi tiết trong đó các trường số (`transAmount`, `transFee`) được chuẩn hóa thành kiểu chuỗi (`str`). Trường `errorCode` trả về `"SUCCESS"` khi giao dịch thành công (khớp điều kiện lọc Rule A1: `request.content.errorCode = SUCCESS`).
+  - Phân nhánh kênh: Khoảng ~21% giao dịch qua kênh ATM sẽ xuất hiện bộ ba trường điều kiện (`atmIdCode`, `telcoCode`, `contentDescriptionsService`).
+
 
 ---
 
