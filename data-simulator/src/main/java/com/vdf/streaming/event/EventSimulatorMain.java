@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
 /**
- * Ứng dụng chính sinh dữ liệu realtime cho 9 nguồn sự kiện và đẩy vào 2 cụm Kafka tương ứng:
+ * Ứng dụng chính sinh dữ liệu realtime cho 10 nguồn sự kiện và đẩy vào 2 cụm Kafka tương ứng:
  *
  * Cụm kafka-gssapi:
  * - V1-UPDATE-TRANS-DAILY-HIS
@@ -34,6 +34,7 @@ import java.util.concurrent.locks.LockSupport;
  * - cdcn_log_central_prod
  * - ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD
  * - core-recharge-history
+ * - PMT-TRANSACTION-SYNC-CMD
  */
 public class EventSimulatorMain {
     private static final Logger log = LoggerFactory.getLogger(EventSimulatorMain.class);
@@ -95,7 +96,7 @@ public class EventSimulatorMain {
                 : String.format("%.0f trans/s (~%.0f events/s)", ratePerSec, ratePerSec * 8.5);
 
         System.out.println("╔════════════════════════════════════════════════════════════════════╗");
-        System.out.println("║          REALTIME EVENT DATA SIMULATOR (9 KAFKA SOURCES)           ║");
+        System.out.println("║          REALTIME EVENT DATA SIMULATOR (10 KAFKA SOURCES)          ║");
         System.out.println("╠════════════════════════════════════════════════════════════════════╣");
         System.out.println("║ Mode:       " + String.format("%-54s", mode.toUpperCase()) + "║");
         System.out.println("║ Threads:    " + String.format("%-54s", numThreads + " worker threads") + "║");
@@ -283,7 +284,7 @@ public class EventSimulatorMain {
         System.out.println("  --count <n>                Tổng số giao dịch cần sinh (mặc định: liên tục cho stream, 50 cho batch)");
         System.out.println("  --dry-run                  Chỉ sinh dữ liệu và in ra log/file, không gửi mạng tới Kafka");
         System.out.println("  --output-dir <path>        Đường dẫn thư mục lưu các sự kiện dạng .jsonl");
-        System.out.println("  --sources <list>           Danh sách topic cần sinh (phân cách bởi dấu phẩy, mặc định: toàn bộ 9)");
+        System.out.println("  --sources <list>           Danh sách topic cần sinh (phân cách bởi dấu phẩy, mặc định: toàn bộ 10)");
         System.out.println("  --env <path>               Đường dẫn tới file .env (mặc định: .env ở thư mục gốc)");
         System.out.println("  -h, --help                 Hiển thị hướng dẫn này");
     }

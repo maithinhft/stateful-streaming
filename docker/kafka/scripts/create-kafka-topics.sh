@@ -22,6 +22,7 @@ PLAIN_TOPICS=(
   "cdcn_log_central_prod:6"
   "ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD:6"
   "core-recharge-history:6"
+  "PMT-TRANSACTION-SYNC-CMD:6"
   "result:6"
   "dlq:6"
 )
