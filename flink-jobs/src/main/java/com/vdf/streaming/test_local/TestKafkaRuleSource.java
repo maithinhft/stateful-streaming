@@ -1,7 +1,11 @@
 package com.vdf.streaming.test_local;
 
 import com.vdf.streaming.compiler.RuleCompiler;
+import com.vdf.streaming.config.KafkaClusterConfig;
+import com.vdf.streaming.dynamic.metadata.PostgresKafkaMetadataService;
 import com.vdf.streaming.models.CompiledRuleEnvelope;
+import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.connector.kafka.dynamic.metadata.ClusterMetadata;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -14,34 +18,57 @@ import java.util.Properties;
 
 public class TestKafkaRuleSource {
     public static void main(String[] args) {
-        System.out.println("=== Khởi động Kafka Consumer (Native Java) để parse Rule ===");
+        System.out.println("=== Khởi động Kafka Consumer (Dynamic Metadata) để parse Rule ===");
 
-        // Thiết lập trực tiếp cấu hình SASL_PLAINTEXT (tránh dùng class của Flink để không bị lỗi NoClassDefFoundError)
+        ParameterTool params = ParameterTool.fromArgs(args);
+
+        // 1. Cấu hình kết nối DB lấy metadata động
+        String pgHost = params.get("postgres.host", "postgres");
+        String pgPort = params.get("postgres.port", "5432");
+        String pgDb = params.get("postgres.db", "realtime_core");
+        String defaultPgUrl = String.format("jdbc:postgresql://%s:%s/%s", pgHost, pgPort, pgDb);
+        String pgUrl = params.get("postgres.url", defaultPgUrl);
+        String pgUser = params.get("postgres.user", "postgres");
+        String pgPassword = params.get("postgres.password", "postgres");
+        String tablePrefix = params.get("postgres.table.prefix", "kafka_stream");
+
+        System.out.println("Đang kết nối PostgreSQL để lấy Dynamic Kafka Metadata: " + pgUrl);
+        PostgresKafkaMetadataService metadataService = new PostgresKafkaMetadataService(
+                pgUrl, pgUser, pgPassword, tablePrefix, 5000L);
+
+        String ruleStreamId = params.get("rule.stream.id", "rule");
+        ClusterMetadata clusterMeta = metadataService.getClusterMetadataByStreamId(ruleStreamId);
+
         Properties props = new Properties();
-        
-        // Bạn có thể đổi localhost:9092 thành localhost:29092 tùy theo port mà Docker map ra ngoài
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092"); 
-        
-        // Cấu hình SASL_PLAINTEXT y hệt như KafkaClusterConfig (nhưng bằng Java thuần)
-        props.put("security.protocol", "SASL_PLAINTEXT");
-        props.put("sasl.mechanism", "PLAIN");
-        props.put("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"admin\" password=\"admin-secret\";");
+        String topic = "rule_definitions";
 
+        // 2. Load properties từ Postgres (nếu có), hoặc Fallback về KafkaClusterConfig
+        if (clusterMeta != null && clusterMeta.getProperties() != null && !clusterMeta.getProperties().isEmpty()) {
+            System.out.println("=> Đã tìm thấy cấu hình cluster cho stream_id = '" + ruleStreamId + "' trong CSDL!");
+            props.putAll(clusterMeta.getProperties());
+            if (clusterMeta.getTopics() != null && !clusterMeta.getTopics().isEmpty()) {
+                topic = clusterMeta.getTopics().iterator().next();
+            }
+        } else {
+            System.out.println("=> KHÔNG tìm thấy stream_id = '" + ruleStreamId + "' trong CSDL. Fallback về KafkaClusterConfig (tham số truyền vào)...");
+            props = KafkaClusterConfig.getConsumerProperties(params, "rule", KafkaClusterConfig.CLUSTER_PLAIN);
+            topic = params.get("rule.topic", topic);
+        }
+
+        // Đảm bảo các cấu hình cơ bản cho Consumer hoạt động
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "rule-compiler-test-group");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
 
         System.out.println("Sử dụng Bootstrap Servers: " + props.getProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
-        System.out.println("Security Protocol: " + props.getProperty("security.protocol"));
+        System.out.println("Security Protocol: " + props.getProperty("security.protocol", "PLAINTEXT"));
+        System.out.println("Topic sẽ lắng nghe: " + topic);
 
+        // Khởi tạo Compiler và Consumer
         RuleCompiler compiler = new RuleCompiler();
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
-        
-        String topic = "rule_definitions";
         consumer.subscribe(Collections.singletonList(topic));
-
-        System.out.println("Đang lắng nghe topic: '" + topic + "'...");
 
         try {
             while (true) {
@@ -72,6 +99,7 @@ public class TestKafkaRuleSource {
             }
         } finally {
             consumer.close();
+            metadataService.close();
         }
     }
 }
