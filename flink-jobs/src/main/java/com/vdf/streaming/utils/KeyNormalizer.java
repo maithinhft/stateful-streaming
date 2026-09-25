@@ -1,4 +1,4 @@
-package com.vdf.streaming.validation;
+package com.vdf.streaming.utils;
 
 import java.io.Serializable;
 import java.util.regex.Pattern;

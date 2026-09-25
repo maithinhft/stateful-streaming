@@ -4,8 +4,8 @@ import com.vdf.streaming.config.KafkaClusterConfig;
 import com.vdf.streaming.dynamic.deserializer.KafkaEventRecordDeserializer;
 import com.vdf.streaming.dynamic.metadata.PostgresKafkaMetadataService;
 import com.vdf.streaming.dynamic.model.KafkaEventRecord;
-import com.vdf.streaming.validation.BatchSchemaValidationProcessFunction;
-import com.vdf.streaming.validation.StreamSchemaValidationProcessFunction;
+import com.vdf.streaming.operators.BatchSchemaValidationFunction;
+import com.vdf.streaming.operators.StreamSchemaValidationFunction;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.java.utils.ParameterTool;
@@ -211,12 +211,12 @@ public class DynamicPassThroughJob {
         // ====================================================================
         // 6.1 Thẩm định luồng Stream
         DataStream<String> validStreamEvents = streamEventStream
-                .process(new StreamSchemaValidationProcessFunction(pgUrl, pgUser, pgPassword))
+                .process(new StreamSchemaValidationFunction(pgUrl, pgUser, pgPassword))
                 .name("Stream Schema Validation & E.164 Normalization");
 
         // 6.2 Thẩm định luồng Batch theo quy trình 5 tầng
         DataStream<String> validBatchEvents = batchEventStream
-                .process(new BatchSchemaValidationProcessFunction(pgUrl, pgUser, pgPassword))
+                .process(new BatchSchemaValidationFunction(pgUrl, pgUser, pgPassword))
                 .name("Batch 5-Level Validation & Key Normalization");
 
         // ====================================================================

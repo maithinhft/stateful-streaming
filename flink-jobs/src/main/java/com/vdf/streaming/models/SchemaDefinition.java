@@ -1,4 +1,4 @@
-package com.vdf.streaming.validation.model;
+package com.vdf.streaming.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;

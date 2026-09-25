@@ -1,11 +1,11 @@
-package com.vdf.streaming.validation;
+package com.vdf.streaming.operators;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vdf.streaming.dynamic.model.KafkaEventRecord;
-import com.vdf.streaming.validation.model.KeyDefinition;
-import com.vdf.streaming.validation.model.SchemaDefinition;
+import com.vdf.streaming.models.SchemaDefinition;
+import com.vdf.streaming.utils.KeyNormalizer;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Hàm thẩm định bản tin luồng Batch Event theo Quy trình 5 tầng (5-Level Validation Pipeline)
- * quy định tại đặc tả 07_BATCH_EVENT_SCHEMA.md.
+ * quy định tại đặc tả 07_BATCH_EVENT_SCHEMA.md và IMPLEMENTATION_BLUEPRINT.md.
  *
  * <ol>
  *   <li>Level 1: Protocol &amp; Envelope Validation (dataset_name, pipeline_id, batch_id, sync_mode...).</li>
@@ -31,10 +31,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>Level 5: Semantic &amp; Field Constraints (kiểm tra type, required, nullable, allowed_values...).</li>
  * </ol>
  */
-public class BatchSchemaValidationProcessFunction extends ProcessFunction<KafkaEventRecord, String> {
+public class BatchSchemaValidationFunction extends ProcessFunction<KafkaEventRecord, String> {
 
     private static final long serialVersionUID = 1L;
-    private static final Logger LOG = LoggerFactory.getLogger(BatchSchemaValidationProcessFunction.class);
+    private static final Logger LOG = LoggerFactory.getLogger(BatchSchemaValidationFunction.class);
 
     private final String pgUrl;
     private final String pgUser;
@@ -44,13 +44,13 @@ public class BatchSchemaValidationProcessFunction extends ProcessFunction<KafkaE
     private transient ObjectMapper objectMapper;
     private transient Map<String, Long> lastSnapshotTimes;
 
-    public BatchSchemaValidationProcessFunction(String pgUrl, String pgUser, String pgPassword) {
+    public BatchSchemaValidationFunction(String pgUrl, String pgUser, String pgPassword) {
         this.pgUrl = pgUrl;
         this.pgUser = pgUser;
         this.pgPassword = pgPassword;
     }
 
-    public BatchSchemaValidationProcessFunction(SchemaRegistry customRegistry) {
+    public BatchSchemaValidationFunction(SchemaRegistry customRegistry) {
         this.pgUrl = null;
         this.pgUser = null;
         this.pgPassword = null;
@@ -182,7 +182,7 @@ public class BatchSchemaValidationProcessFunction extends ProcessFunction<KafkaE
             }
         }
 
-        // Bản tin vượt qua toàn bộ 5 tầng thẩm định
+        // Bản tin vượt qua toàn bộ 5 tầng thẩm định -> tạo ValidatedBatchEvent hoặc emit JSON
         LOG.debug("Batch event passed 5-level validation: dataset={}, batch_id={}, key={}", datasetName, batchId, normalizedKey);
         out.collect(rootNode.toString());
     }

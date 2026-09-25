@@ -1,8 +1,8 @@
-package com.vdf.streaming.validation;
+package com.vdf.streaming.operators;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vdf.streaming.validation.model.SchemaDefinition;
+import com.vdf.streaming.models.SchemaDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

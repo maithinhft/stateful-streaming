@@ -1,11 +1,12 @@
-package com.vdf.streaming.validation;
+package com.vdf.streaming.operators;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vdf.streaming.dynamic.model.KafkaEventRecord;
-import com.vdf.streaming.validation.model.KeyDefinition;
-import com.vdf.streaming.validation.model.SchemaDefinition;
+import com.vdf.streaming.models.KeyDefinition;
+import com.vdf.streaming.models.SchemaDefinition;
+import com.vdf.streaming.utils.KeyNormalizer;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
@@ -16,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Hàm thẩm định bản tin luồng Realtime Stream Event.
+ * Hàm thẩm định bản tin luồng Realtime Stream Event (theo format tại IMPLEMENTATION_BLUEPRINT.md).
  *
  * <p>Quy trình:
  * <ol>
@@ -27,10 +28,10 @@ import java.util.List;
  *   <li>Phát hành bản tin JSON hợp lệ sang luồng downstream; ghi log WARN cho bản tin vi phạm.</li>
  * </ol>
  */
-public class StreamSchemaValidationProcessFunction extends ProcessFunction<KafkaEventRecord, String> {
+public class StreamSchemaValidationFunction extends ProcessFunction<KafkaEventRecord, String> {
 
     private static final long serialVersionUID = 1L;
-    private static final Logger LOG = LoggerFactory.getLogger(StreamSchemaValidationProcessFunction.class);
+    private static final Logger LOG = LoggerFactory.getLogger(StreamSchemaValidationFunction.class);
 
     private final String pgUrl;
     private final String pgUser;
@@ -39,13 +40,13 @@ public class StreamSchemaValidationProcessFunction extends ProcessFunction<Kafka
     private SchemaRegistry schemaRegistry;
     private transient ObjectMapper objectMapper;
 
-    public StreamSchemaValidationProcessFunction(String pgUrl, String pgUser, String pgPassword) {
+    public StreamSchemaValidationFunction(String pgUrl, String pgUser, String pgPassword) {
         this.pgUrl = pgUrl;
         this.pgUser = pgUser;
         this.pgPassword = pgPassword;
     }
 
-    public StreamSchemaValidationProcessFunction(SchemaRegistry customRegistry) {
+    public StreamSchemaValidationFunction(SchemaRegistry customRegistry) {
         this.pgUrl = null;
         this.pgUser = null;
         this.pgPassword = null;

@@ -1,4 +1,4 @@
-package com.vdf.streaming.validation;
+package com.vdf.streaming.utils;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

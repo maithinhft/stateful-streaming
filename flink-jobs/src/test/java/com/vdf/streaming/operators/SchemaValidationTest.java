@@ -1,10 +1,10 @@
-package com.vdf.streaming.validation;
+package com.vdf.streaming.operators;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vdf.streaming.dynamic.model.KafkaEventRecord;
-import com.vdf.streaming.validation.model.FieldDefinition;
-import com.vdf.streaming.validation.model.KeyDefinition;
-import com.vdf.streaming.validation.model.SchemaDefinition;
+import com.vdf.streaming.models.FieldDefinition;
+import com.vdf.streaming.models.KeyDefinition;
+import com.vdf.streaming.models.SchemaDefinition;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.util.Collector;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,7 +98,7 @@ public class SchemaValidationTest {
     @Test
     @DisplayName("Stream Validator: Bản tin hợp lệ, tự động chuẩn hóa msisdn sang E.164")
     void testStreamValidationSuccess() throws Exception {
-        StreamSchemaValidationProcessFunction function = new StreamSchemaValidationProcessFunction(registry);
+        StreamSchemaValidationFunction function = new StreamSchemaValidationFunction(registry);
         function.open(new Configuration());
 
         String json = "{"
@@ -120,7 +120,7 @@ public class SchemaValidationTest {
     @Test
     @DisplayName("Stream Validator: Thiếu trường bắt buộc required=true bị loại bỏ")
     void testStreamValidationMissingRequired() throws Exception {
-        StreamSchemaValidationProcessFunction function = new StreamSchemaValidationProcessFunction(registry);
+        StreamSchemaValidationFunction function = new StreamSchemaValidationFunction(registry);
         function.open(new Configuration());
 
         // Thiếu transAmount
@@ -139,7 +139,7 @@ public class SchemaValidationTest {
     @Test
     @DisplayName("Batch Validator: Bản tin hợp lệ đầy đủ 5 tầng")
     void testBatchValidationSuccess() throws Exception {
-        BatchSchemaValidationProcessFunction function = new BatchSchemaValidationProcessFunction(registry);
+        BatchSchemaValidationFunction function = new BatchSchemaValidationFunction(registry);
         function.open(new Configuration());
 
         String batchJson = "{"
@@ -167,7 +167,7 @@ public class SchemaValidationTest {
     @Test
     @DisplayName("Batch Validator: Vi phạm enum allowed_values bị loại bỏ")
     void testBatchValidationEnumViolation() throws Exception {
-        BatchSchemaValidationProcessFunction function = new BatchSchemaValidationProcessFunction(registry);
+        BatchSchemaValidationFunction function = new BatchSchemaValidationFunction(registry);
         function.open(new Configuration());
 
         String batchJson = "{"
@@ -192,7 +192,7 @@ public class SchemaValidationTest {
     @Test
     @DisplayName("Batch Validator: Anti-Stale check loại bỏ snapshot cũ hơn")
     void testBatchValidationAntiStale() throws Exception {
-        BatchSchemaValidationProcessFunction function = new BatchSchemaValidationProcessFunction(registry);
+        BatchSchemaValidationFunction function = new BatchSchemaValidationFunction(registry);
         function.open(new Configuration());
 
         // Snapshot 1 lúc 03:00 (Mới hơn)
