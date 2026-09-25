@@ -1,8 +1,10 @@
 package com.vdf.streaming.test_local;
 
 import com.vdf.streaming.compiler.RuleCompiler;
+import com.vdf.streaming.config.ConfigLoader;
 import com.vdf.streaming.config.KafkaClusterConfig;
 import com.vdf.streaming.dynamic.metadata.PostgresKafkaMetadataService;
+import com.vdf.streaming.index.InvertedIndexManager;
 import com.vdf.streaming.models.CompiledRuleEnvelope;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
@@ -13,6 +15,8 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Properties;
 
@@ -21,34 +25,44 @@ import java.util.Properties;
  * Mục tiêu: Nối vào topic Kafka, parse rule CDC và ghi log thẳng ra console của TaskManager.
  */
 public class TestFlinkRuleJob {
+    private static final Logger LOG = LoggerFactory.getLogger(TestFlinkRuleJob.class);
+
     public static void main(String[] args) throws Exception {
-        System.out.println("=== Khởi tạo Flink Job: Test Rule Compiler ===");
-        
+        LOG.info("=== Khởi tạo Flink Job: Test Rule Compiler ===");
+
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         ParameterTool params = ParameterTool.fromArgs(args);
         env.getConfig().setGlobalJobParameters(params);
 
-        // Lấy config từ DB (Mặc định trong Docker, tên miền 'postgres' và 'kafka-plain' tự động hiểu)
-        String pgUrl = params.get("postgres.url", "jdbc:postgresql://realtime-postgres:5432/realtime_core");
-        String pgUser = params.get("postgres.user", "postgres");
-        String pgPassword = params.get("postgres.password", "postgres");
-        
+        // Lấy config từ YAML (ưu tiên), fallback về params/defaults
+        String pgUrl      = params.get("postgres.url",      ConfigLoader.getString("postgres.url", "jdbc:postgresql://postgres:5432/realtime_core"));
+        String pgUser     = params.get("postgres.user",     ConfigLoader.getString("postgres.user", "postgres"));
+        String pgPassword = params.get("postgres.password", ConfigLoader.getString("postgres.password", ""));
+        String tablePrefix = params.get("postgres.table.prefix", ConfigLoader.getString("postgres.table_prefix", "kafka_stream"));
+
+        LOG.info("Connecting to PostgreSQL: {}", pgUrl);
         PostgresKafkaMetadataService metadataService = new PostgresKafkaMetadataService(
-                pgUrl, pgUser, pgPassword, "kafka_stream", 5000L);
-        
-        ClusterMetadata clusterMeta = metadataService.getClusterMetadataByStreamId("rule");
+                pgUrl, pgUser, pgPassword, tablePrefix, 5000L);
+
+        String ruleStreamId = params.get("rule.stream.id", ConfigLoader.getString("kafka.stream.rule_stream_id", "rule"));
+        ClusterMetadata clusterMeta = metadataService.getClusterMetadataByStreamId(ruleStreamId);
+
         Properties props = new Properties();
-        String topic = "rule_definitions";
-        
+        String topic = ConfigLoader.getString("kafka.topics.rule_definitions", "rule_definitions");
+
         if (clusterMeta != null && clusterMeta.getProperties() != null && !clusterMeta.getProperties().isEmpty()) {
+            LOG.info("Found cluster config for stream_id='{}' from PostgreSQL", ruleStreamId);
             props.putAll(clusterMeta.getProperties());
             if (clusterMeta.getTopics() != null && !clusterMeta.getTopics().isEmpty()) {
                 topic = clusterMeta.getTopics().iterator().next();
             }
         } else {
+            LOG.warn("Stream_id='{}' not found in DB. Falling back to KafkaClusterConfig", ruleStreamId);
             props = KafkaClusterConfig.getConsumerProperties(params, "rule", KafkaClusterConfig.CLUSTER_PLAIN);
             topic = params.get("rule.topic", topic);
         }
+
+        LOG.info("Subscribing to topic: {} | bootstrap: {}", topic, props.getProperty("bootstrap.servers", "N/A"));
 
         KafkaSource<String> source = KafkaSource.<String>builder()
                 .setProperties(props)
@@ -60,32 +74,34 @@ public class TestFlinkRuleJob {
 
         env.fromSource(source, WatermarkStrategy.noWatermarks(), "Kafka Rule Source")
            .process(new ProcessFunction<String, String>() {
+               private static final Logger PLOG = LoggerFactory.getLogger("RuleParserProcess");
                private transient RuleCompiler compiler;
-               private transient com.vdf.streaming.index.InvertedIndexManager indexManager;
+               private transient InvertedIndexManager indexManager;
 
                @Override
                public void open(org.apache.flink.configuration.Configuration parameters) throws Exception {
                    compiler = new RuleCompiler();
-                   indexManager = new com.vdf.streaming.index.InvertedIndexManager();
+                   indexManager = new InvertedIndexManager();
                }
 
                @Override
                public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
-                   System.out.println("\n[FLINK-TASKMANAGER NHẬN RULE]: " + value);
+                   PLOG.info("[FLINK-TASKMANAGER RECEIVED RULE]: {}", value);
                    try {
                        RuleCompiler.CdcRuleEvent cdcEvent = compiler.parseCdcEvent(value);
                        CompiledRuleEnvelope existingRule = indexManager.getRuleById(cdcEvent.ruleId());
                        if (existingRule != null && existingRule.getCdcVersion() >= cdcEvent.version()) {
-                           System.out.println(" => [BỎ QUA] Rule " + cdcEvent.ruleId() + " đã có bản mới hơn hoặc bằng (Hiện tại: " + existingRule.getCdcVersion() + ", Nhận được: " + cdcEvent.version() + ")");
+                           PLOG.info("[SKIP] Rule {} already has newer or equal version (current: {}, received: {})",
+                                   cdcEvent.ruleId(), existingRule.getCdcVersion(), cdcEvent.version());
                            return;
                        }
                        if (compiler.isDelete(cdcEvent)) {
-                           System.out.println(" => Sự kiện XÓA/VÔ HIỆU HÓA Rule: " + cdcEvent.ruleId());
+                           PLOG.info("[DELETE/DISABLE] Rule event: {}", cdcEvent.ruleId());
                            indexManager.unregisterRule(cdcEvent.ruleId());
                        } else {
                            CompiledRuleEnvelope rule = compiler.compile(cdcEvent, -1);
-                           System.out.println(" => [THÀNH CÔNG] Parse rule hợp lệ: " + rule.getRuleName());
-                           
+                           PLOG.info("[SUCCESS] Compiled rule: {}", rule.getRuleName());
+
                            // Đăng ký hoặc Update rule vào Inverted Index
                            if (cdcEvent.op() != null && cdcEvent.op().equals("u")) {
                                indexManager.updateRule(rule);
@@ -93,13 +109,12 @@ public class TestFlinkRuleJob {
                                indexManager.registerRule(rule);
                            }
                        }
-                       
-                       // In ra màn hình cấu trúc của Inverted Index hiện tại
+
+                       // In ra cấu trúc của Inverted Index hiện tại (ở mức DEBUG)
                        indexManager.printDebugInfo();
-                       
+
                    } catch (Exception e) {
-                       System.err.println(" => [LỖI] Parse hoặc Index thất bại: " + e.getMessage());
-                       e.printStackTrace();
+                       PLOG.error("[ERROR] Parse or Index failed: {}", e.getMessage(), e);
                    }
                }
            })

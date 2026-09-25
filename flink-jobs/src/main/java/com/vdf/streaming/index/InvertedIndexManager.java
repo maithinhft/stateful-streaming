@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.roaringbitmap.RoaringBitmap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.vdf.streaming.models.CompiledRuleEnvelope;
 import com.vdf.streaming.models.CompiledTriggerCriteria;
@@ -17,6 +19,7 @@ import com.vdf.streaming.models.TriggerCondition;
  */
 public class InvertedIndexManager implements Serializable {
     private static final long serialVersionUID = 1L;
+    private static final Logger LOG = LoggerFactory.getLogger(InvertedIndexManager.class);
 
     // Map chứa SourceVersionIndex cho từng cặp source:schemaVersion
     // Dùng volatile reference để hỗ trợ pattern Copy-On-Write (COW)
@@ -192,14 +195,14 @@ public class InvertedIndexManager implements Serializable {
     }
 
     public void printDebugInfo() {
-        System.out.println("\n========== BÁO CÁO INVERTED INDEX ==========");
-//        System.out.println("Tổng số Slot đã cấp phát (maxAllocatedIndex): " + slotManager.getMaxAllocatedIndex());
-//        System.out.println("Các Slot đang trống (đã xóa): " + slotManager.getFreeSlotsBitmap().toString());
-//        System.out.println("Các tập SourceVersionIndex:");
-//        for (Map.Entry<String, SourceVersionIndex> entry : indexMap.entrySet()) {
-//            System.out.println("  [+] " + entry.getKey());
-//            entry.getValue().printDebugInfo();
-//        }
-        System.out.println("=============================================\n");
+        LOG.debug("\n========== BÁO CÁO INVERTED INDEX ==========");
+        LOG.debug("Tổng số Slot đã cấp phát (maxAllocatedIndex): {}", slotManager.getMaxAllocatedIndex());
+        LOG.debug("Các Slot đang trống (đã xóa): {}", slotManager.getFreeSlotsBitmap());
+        LOG.debug("Các tập SourceVersionIndex:");
+        for (Map.Entry<String, SourceVersionIndex> entry : indexMap.entrySet()) {
+            LOG.debug("  [+] {}", entry.getKey());
+            entry.getValue().printDebugInfo();
+        }
+        LOG.debug("=============================================");
     }
 }

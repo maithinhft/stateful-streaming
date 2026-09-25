@@ -1,6 +1,9 @@
 package com.vdf.streaming.index;
 
 import org.roaringbitmap.RoaringBitmap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.List;
@@ -13,6 +16,7 @@ import java.util.Map;
  */
 public class SourceVersionIndex implements Serializable {
     private static final long serialVersionUID = 1L;
+    private static final Logger LOG = LoggerFactory.getLogger(SourceVersionIndex.class);
 
     // Key = "field:value", Value = bitmap các slot của luật (rule slots)
     private final Map<String, RoaringBitmap> exactIndex;
@@ -127,10 +131,10 @@ public class SourceVersionIndex implements Serializable {
     }
 
     public void printDebugInfo() {
-        System.out.println("      * exactIndex (keys=" + exactIndex.size() + "):");
+        LOG.debug("      * exactIndex (keys={}):", exactIndex.size());
         for (Map.Entry<String, RoaringBitmap> entry : exactIndex.entrySet()) {
-            System.out.println("        - " + entry.getKey() + " -> Slots: " + entry.getValue().toString());
+            LOG.debug("        - {} -> Slots: {}", entry.getKey(), entry.getValue());
         }
-        System.out.println("      * complexIndex -> Slots: " + complexIndex.toString());
+        LOG.debug("      * complexIndex -> Slots: {}", complexIndex);
     }
 }

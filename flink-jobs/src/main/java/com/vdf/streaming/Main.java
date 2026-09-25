@@ -2,6 +2,7 @@ package com.vdf.streaming;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vdf.streaming.compiler.RuleCompiler;
+import com.vdf.streaming.config.ConfigLoader;
 import com.vdf.streaming.index.InvertedIndexManager;
 import com.vdf.streaming.models.CompiledRuleEnvelope;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -12,21 +13,30 @@ import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.roaringbitmap.RoaringBitmap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
 public class Main {
+    private static final Logger LOG = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws Exception {
-        System.out.println("=== Khởi động Flink Job: Stateful Streaming (Test Kafka) ===");
-        
+        LOG.info("=== Khởi động Flink Job: Stateful Streaming (Test Kafka) ===");
+
+        // Load config từ YAML (qua ConfigLoader, đã resolve .env)
+        String bootstrapServers = ConfigLoader.getString("kafka.plain.bootstrap_servers", "localhost:9092");
+        String eventTopic       = ConfigLoader.getString("kafka.topics.events", "events");
+        String groupId          = ConfigLoader.getString("kafka.group.events", "flink-events-group");
+
+        LOG.info("Kafka bootstrap: {}, topic: {}, group: {}", bootstrapServers, eventTopic, groupId);
+
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        // Thay đổi bootstrap servers và topic tương ứng với môi trường Kafka của bạn
         KafkaSource<String> source = KafkaSource.<String>builder()
-                .setBootstrapServers("localhost:9092")
-                .setTopics("test_events")
-                .setGroupId("flink-test-group")
+                .setBootstrapServers(bootstrapServers)
+                .setTopics(eventTopic)
+                .setGroupId(groupId)
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
@@ -39,6 +49,8 @@ public class Main {
     }
 
     public static class RuleMatchingMapper extends RichMapFunction<String, String> {
+        private static final Logger LOG = LoggerFactory.getLogger(RuleMatchingMapper.class);
+
         private transient RuleCompiler compiler;
         private transient InvertedIndexManager indexManager;
         private transient ObjectMapper mapper;
@@ -49,7 +61,7 @@ public class Main {
             indexManager = new InvertedIndexManager();
             mapper = new ObjectMapper();
 
-            // Khởi tạo Rule
+            // Khởi tạo Rule mẫu (test)
             String ruleJson = "{"
                     + "\"rule_id\": \"R_TOPUP_001\","
                     + "\"rule_name\": \"Cảnh báo Topup bất thường\","
@@ -81,7 +93,7 @@ public class Main {
             RuleCompiler.CdcRuleEvent cdcEvent = compiler.parseCdcEvent(cdcJson);
             CompiledRuleEnvelope compiledRule = compiler.compile(cdcEvent, -1);
             indexManager.registerRule(compiledRule);
-            System.out.println("Đã load rule vào bộ nhớ: " + compiledRule.getRuleName());
+            LOG.info("Rule loaded into memory: {}", compiledRule.getRuleName());
         }
 
         @Override
@@ -89,21 +101,19 @@ public class Main {
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> eventFields = mapper.readValue(jsonEvent, Map.class);
-                
+
                 // Mặc định source là CPM, schema là v2 để test
                 RoaringBitmap candidateSlots = indexManager.findCandidateRules("CPM", "v2", eventFields);
-                
+
                 if (candidateSlots.isEmpty()) {
                     return "Event [" + jsonEvent + "] -> KHÔNG KHỚP (Bị loại ngay bởi Inverted Index).";
                 } else {
                     int slot = candidateSlots.first();
                     CompiledRuleEnvelope rule = indexManager.getRule(slot);
-                    
-                    // Do chưa có thư mục evaluators nên ta dùng code Java if/else cơ bản 
-                    // để mô phỏng ConditionTreeEvaluator (thẩm định chính xác DNF)
+
                     boolean exactMatch = "TOPUP".equals(eventFields.get("serviceCode"));
                     boolean complexMatch = false;
-                    
+
                     if (eventFields.containsKey("amount")) {
                         double amount = Double.parseDouble(eventFields.get("amount").toString());
                         complexMatch = amount > 500000;
@@ -112,10 +122,11 @@ public class Main {
                     if (exactMatch && complexMatch) {
                         return "Event [" + jsonEvent + "] -> [THÀNH CÔNG] Khớp hoàn toàn Rule: " + rule.getRuleId();
                     } else {
-                        return "Event [" + jsonEvent + "] -> [THẤT BẠI] Là Ứng viên nhưng bị loại ở bước Evaluator do chưa đủ điều kiện AND.";
+                        return "Event [" + jsonEvent + "] -> [THẤT BẠI] Là Ứng viên nhưng bị loại ở bước Evaluator.";
                     }
                 }
             } catch (Exception e) {
+                LOG.error("Error parsing event: {}", jsonEvent, e);
                 return "Lỗi parse event: " + jsonEvent;
             }
         }

@@ -1,11 +1,50 @@
-<configuration>
+<configuration scan="true" scanPeriod="30 seconds">
+    <timestamp key="startTime" datePattern="yyyyMMdd_HHmmss"/>
+
+    <!-- ============================================================ -->
+    <!-- Console Appender                                             -->
+    <!-- ============================================================ -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | %logger{40} | %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- ============================================================ -->
+    <!-- Rolling File Appender                                        -->
+    <!-- ============================================================ -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>outputs/logs/${startTime}/flink-job.log</file>
+        <append>true</append>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>outputs/logs/${startTime}/flink-job.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | %logger{40} | %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ============================================================ -->
+    <!-- Suppress noisy third-party loggers                           -->
+    <!-- ============================================================ -->
+    <logger name="org.apache.kafka" level="WARN"/>
+    <logger name="org.apache.flink" level="INFO"/>
+    <logger name="org.apache.zookeeper" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+
+    <!-- ============================================================ -->
+    <!-- Application loggers                                          -->
+    <!-- ============================================================ -->
+    <logger name="com.vdf.streaming" level="DEBUG"/>
+
+    <!-- ============================================================ -->
+    <!-- Root                                                         -->
+    <!-- ============================================================ -->
     <root level="INFO">
-        <appender-ref ref="STDOUT" />
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="FILE"/>
     </root>
 </configuration>

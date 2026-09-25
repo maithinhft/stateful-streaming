@@ -1,5 +1,6 @@
 package com.vdf.streaming;
 
+import com.vdf.streaming.config.ConfigLoader;
 import com.vdf.streaming.config.KafkaClusterConfig;
 import com.vdf.streaming.dynamic.metadata.PostgresKafkaMetadataService;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -63,15 +64,16 @@ public class DynamicPassThroughJob {
         }
 
         // 1. Cấu hình PostgreSQL Metadata Service cho Event Stream (DynamicKafkaSource)
-        String pgHost = parameters.get("postgres.host", "postgres");
-        String pgPort = parameters.get("postgres.port", "5432");
-        String pgDb = parameters.get("postgres.db", "realtime_core");
-        String defaultPgUrl = String.format("jdbc:postgresql://%s:%s/%s", pgHost, pgPort, pgDb);
-        String pgUrl = parameters.get("postgres.url", defaultPgUrl);
-        String pgUser = parameters.get("postgres.user", "postgres");
-        String pgPassword = parameters.get("postgres.password", "postgres");
-        String tablePrefix = parameters.get("postgres.table.prefix", "kafka_stream");
-        long discoveryIntervalMs = parameters.getLong("stream.metadata.discovery.interval.ms", 30000L);
+        String pgUrl      = parameters.get("postgres.url",
+                ConfigLoader.getString("postgres.url", "jdbc:postgresql://postgres:5432/realtime_core"));
+        String pgUser     = parameters.get("postgres.user",
+                ConfigLoader.getString("postgres.user", "postgres"));
+        String pgPassword = parameters.get("postgres.password",
+                ConfigLoader.getString("postgres.password", ""));
+        String tablePrefix = parameters.get("postgres.table.prefix",
+                ConfigLoader.getString("postgres.table_prefix", "kafka_stream"));
+        long discoveryIntervalMs = parameters.getLong("stream.metadata.discovery.interval.ms",
+                ConfigLoader.getLong("kafka.discovery_interval_ms", 30000L));
 
         LOG.info("Connecting to PostgreSQL metadata: {} (tablePrefix: {})", pgUrl, tablePrefix);
         PostgresKafkaMetadataService metadataService = new PostgresKafkaMetadataService(
@@ -80,7 +82,8 @@ public class DynamicPassThroughJob {
         // 2. Cấu hình Result Sink (cụm PLAIN)
         String resultBootstrap = KafkaClusterConfig.getBootstrapServers(parameters, "result", KafkaClusterConfig.CLUSTER_PLAIN);
         Properties resultProps = KafkaClusterConfig.getProducerProperties(parameters, "result", KafkaClusterConfig.CLUSTER_PLAIN);
-        String resultTopic = parameters.get("result.topic", "result");
+        String resultTopic = parameters.get("result.topic",
+                ConfigLoader.getString("kafka.topics.result", "result"));
         LOG.info("Result Sink -> Bootstrap: {}, Topic: {}", resultBootstrap, resultTopic);
 
         KafkaSink<String> resultSink = KafkaSink.<String>builder()
@@ -115,7 +118,8 @@ public class DynamicPassThroughJob {
                 .withIdleness(Duration.ofMinutes(1));
 
         // 4. Khởi tạo DynamicKafkaSource cho Event Multi-Cluster Source
-        String eventsStreamId = parameters.get("events.stream.id", "stream-events");
+        String eventsStreamId = parameters.get("events.stream.id",
+                ConfigLoader.getString("kafka.stream.events_stream_id", "stream-events"));
         boolean useDynamicEventSource = parameters.getBoolean("use.dynamic.source", true);
 
         DataStream<String> eventStream;
