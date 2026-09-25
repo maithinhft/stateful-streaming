@@ -16,8 +16,10 @@ import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ExternalizedCheckpointRetention;
-import org.apache.flink.streaming.api.CheckpointingMode;
+import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
@@ -48,9 +50,17 @@ public class DynamicPassThroughJob {
     public static void main(String[] args) throws Exception {
         LOG.info("Starting Flink Dynamic Kafka Pass-Through & Validation Job...");
 
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-
         ParameterTool parameters = ParameterTool.fromArgs(args);
+
+        // Khởi tạo Flink Configuration từ parameters (Flink 1.19+ ConfigOptions)
+        Configuration flinkConfig = new Configuration();
+        if (parameters.has("checkpoint.dir")) {
+            flinkConfig.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+            flinkConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, parameters.get("checkpoint.dir"));
+        }
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(flinkConfig);
+        env.configure(flinkConfig);
         env.getConfig().setGlobalJobParameters(parameters);
 
         int parallelism = parameters.getInt("parallelism", 4);
@@ -67,10 +77,6 @@ public class DynamicPassThroughJob {
         checkpointConfig.setMaxConcurrentCheckpoints(1);
         checkpointConfig.setExternalizedCheckpointRetention(
                 ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
-
-        if (parameters.has("checkpoint.dir")) {
-            checkpointConfig.setCheckpointStorage(parameters.get("checkpoint.dir"));
-        }
 
         // 1. Cấu hình kết nối PostgreSQL Catalog & Metadata
         String pgHost = parameters.get("postgres.host", "postgres");
