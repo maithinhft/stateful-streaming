@@ -45,6 +45,7 @@ public class InvertedIndexManager implements Serializable {
      */
     public void registerRule(CompiledRuleEnvelope rule) {
         int slotId = slotManager.allocateSlot(rule.getRuleId());
+        rule.setSlotId(slotId); // Đồng bộ slotId thực tế vào envelope
         slotManager.setRule(slotId, rule);
 
         if (rule.getTriggers() != null) {
@@ -119,17 +120,11 @@ public class InvertedIndexManager implements Serializable {
 
     /**
      * Cập nhật một rule.
-     * Xóa slot cũ khỏi tất cả các SourceVersionIndex và sau đó đăng ký lại.
+     * Xóa slot cũ (bằng cách thiết lập bit trong freeSlotsBitmap thông qua unregisterRule) 
+     * và sau đó đăng ký lại. Tránh scan O(N) trên tất cả bitmap.
      */
     public void updateRule(CompiledRuleEnvelope rule) {
-        int oldSlotId = slotManager.getSlotId(rule.getRuleId());
-        if (oldSlotId != -1) {
-            // Xóa slot cũ khỏi tất cả indexMap
-            for (SourceVersionIndex index : indexMap.values()) {
-                index.removeSlot(oldSlotId);
-            }
-            slotManager.releaseSlot(rule.getRuleId());
-        }
+        unregisterRule(rule.getRuleId());
         registerRule(rule);
     }
 
@@ -168,6 +163,21 @@ public class InvertedIndexManager implements Serializable {
     }
 
     /**
+     * Kiểm tra xem event có nên bị bỏ qua do version nhỏ hơn version hiện tại của rule không.
+     */
+    public boolean shouldSkipCdcEvent(String ruleId, long incomingVersion) {
+        CompiledRuleEnvelope existingRule = getRuleById(ruleId);
+        if (existingRule != null && existingRule.getCdcVersion() >= incomingVersion) {
+            return true;
+        }
+        return false;
+    }
+
+    public SlotManager getSlotManager() {
+        return slotManager;
+    }
+
+    /**
      * Tạo bản sao sâu cho toàn bộ cấu trúc dữ liệu để phục vụ Copy-On-Write.
      */
     public InvertedIndexManager deepCopy() {
@@ -182,7 +192,7 @@ public class InvertedIndexManager implements Serializable {
     }
 
     public void printDebugInfo() {
-//        System.out.println("\n========== BÁO CÁO INVERTED INDEX ==========");
+        System.out.println("\n========== BÁO CÁO INVERTED INDEX ==========");
 //        System.out.println("Tổng số Slot đã cấp phát (maxAllocatedIndex): " + slotManager.getMaxAllocatedIndex());
 //        System.out.println("Các Slot đang trống (đã xóa): " + slotManager.getFreeSlotsBitmap().toString());
 //        System.out.println("Các tập SourceVersionIndex:");
