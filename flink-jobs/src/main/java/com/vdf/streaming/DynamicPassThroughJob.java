@@ -19,6 +19,7 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.configuration.ExternalizedCheckpointRetention;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
@@ -215,9 +216,12 @@ public class DynamicPassThroughJob {
                 .name("Stream Schema Validation & E.164 Normalization");
 
         // 6.2 Thẩm định luồng Batch theo quy trình 5 tầng
-        DataStream<String> validBatchEvents = batchEventStream
+        SingleOutputStreamOperator<String> validBatchEvents = batchEventStream
                 .process(new BatchSchemaValidationFunction(pgUrl, pgUser, pgPassword))
                 .name("Batch 5-Level Validation & Key Normalization");
+
+        // Luồng Side Output nhận các bản tin Batch vi phạm thẩm định đẩy vào DLQ
+        DataStream<String> dlqBatchEvents = validBatchEvents.getSideOutput(BatchSchemaValidationFunction.DIRTY_BATCH_DATA_TAG);
 
         // ====================================================================
         // 7. HỢP NHẤT VÀ ĐẨY RA TOPIC 'RESULT'
@@ -226,9 +230,31 @@ public class DynamicPassThroughJob {
 
         if (parameters.getBoolean("print.output", false)) {
             allValidEvents.print("VALID_PASSTHROUGH_EVENT");
+            dlqBatchEvents.print("DLQ_BATCH_EVENT");
         }
 
         allValidEvents.sinkTo(resultSink).name("Result Kafka Sink");
+
+        // ====================================================================
+        // 8. ĐẨY CÁC BẢN TIN LỖI BATCH RA TOPIC 'dlq_batch_events'
+        // ====================================================================
+        String dlqBatchBootstrap = KafkaClusterConfig.getBootstrapServers(parameters, "batch_dlq", KafkaClusterConfig.CLUSTER_PLAIN);
+        Properties dlqBatchProps = KafkaClusterConfig.getProducerProperties(parameters, "batch_dlq", KafkaClusterConfig.CLUSTER_PLAIN);
+        String dlqBatchTopic = parameters.get("batch.dlq.topic", "dlq_batch_events");
+        LOG.info("Batch DLQ Sink -> Bootstrap: {}, Topic: {}", dlqBatchBootstrap, dlqBatchTopic);
+
+        KafkaSink<String> dlqBatchSink = KafkaSink.<String>builder()
+                .setBootstrapServers(dlqBatchBootstrap)
+                .setRecordSerializer(
+                        KafkaRecordSerializationSchema.builder()
+                                .setTopic(dlqBatchTopic)
+                                .setValueSerializationSchema(new SimpleStringSchema())
+                                .build())
+                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .setKafkaProducerConfig(dlqBatchProps)
+                .build();
+
+        dlqBatchEvents.sinkTo(dlqBatchSink).name("Batch DLQ Kafka Sink");
 
         env.execute("Flink Dynamic Kafka Pass-Through & Validation Job");
     }
