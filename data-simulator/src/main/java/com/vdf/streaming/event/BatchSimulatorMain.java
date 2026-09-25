@@ -2,6 +2,7 @@ package com.vdf.streaming.event;
 
 import com.vdf.streaming.event.batch.*;
 import com.vdf.streaming.event.coordinator.CustomerPool;
+import com.vdf.streaming.event.error.DataQualityInjector;
 import com.vdf.streaming.event.kafka.KafkaSimulatorProducer;
 import com.vdf.streaming.event.model.Customer;
 import com.vdf.streaming.event.model.EventRecord;
@@ -49,6 +50,10 @@ public class BatchSimulatorMain {
         String outputDir = null;
         String batchId = null;
         String snapshotTime = null;
+        double errorRate = 0.0;
+        double skewRate = 0.0;
+        double hotKeyRatio = 0.05;
+        int recordsPerDataset = -1;
         Set<String> selectedDatasets = new LinkedHashSet<>();
 
         // Parse CLI args
@@ -65,6 +70,32 @@ public class BatchSimulatorMain {
                     break;
                 case "--snapshot-time":
                     if (i + 1 < args.length) snapshotTime = args[++i];
+                    break;
+                case "--error-rate":
+                case "--dirty-rate":
+                    if (i + 1 < args.length) {
+                        String val = args[++i].replace("%", "").trim();
+                        double r = Double.parseDouble(val);
+                        errorRate = (r > 1.0) ? r / 100.0 : r;
+                    }
+                    break;
+                case "--skew-rate":
+                    if (i + 1 < args.length) {
+                        String val = args[++i].replace("%", "").trim();
+                        double r = Double.parseDouble(val);
+                        skewRate = (r > 1.0) ? r / 100.0 : r;
+                    }
+                    break;
+                case "--hotkey-ratio":
+                    if (i + 1 < args.length) {
+                        String val = args[++i].replace("%", "").trim();
+                        double r = Double.parseDouble(val);
+                        hotKeyRatio = (r > 1.0) ? r / 100.0 : r;
+                    }
+                    break;
+                case "--records-per-dataset":
+                case "--batch-size":
+                    if (i + 1 < args.length) recordsPerDataset = Integer.parseInt(args[++i]);
                     break;
                 case "--dry-run":
                     dryRun = true;
@@ -97,6 +128,11 @@ public class BatchSimulatorMain {
         System.out.println("╠════════════════════════════════════════════════════════════════════╣");
         System.out.println("║ Batch ID:     " + String.format("%-52s", batchId) + "║");
         System.out.println("║ Snapshot:     " + String.format("%-52s", snapshotTime) + "║");
+        System.out.println("║ Error Rate:   " + String.format("%-52s", (errorRate > 0 ? String.format("%.1f%% (Dirty data injection)", errorRate * 100) : "0% (All clean data)")) + "║");
+        System.out.println("║ Data Skew:    " + String.format("%-52s", (skewRate > 0 ? String.format("%.1f%% records dồn vào top %.0f%% Hot Keys", skewRate * 100, hotKeyRatio * 100) : "0% (Uniform distribution)")) + "║");
+        if (recordsPerDataset > 0) {
+            System.out.println("║ Records/Set:  " + String.format("%-52s", recordsPerDataset + " bản ghi / dataset") + "║");
+        }
         System.out.println("║ Dry-run:      " + String.format("%-52s", dryRun) + "║");
         System.out.println("║ Output dir:   " + String.format("%-52s", (outputDir != null ? outputDir : "None")) + "║");
         System.out.println("║ Datasets:     " + String.format("%-52s", (selectedDatasets.isEmpty() ? "ALL (7 datasets)" : String.join(", ", selectedDatasets))) + "║");
@@ -129,6 +165,8 @@ public class BatchSimulatorMain {
 
         // Thống kê
         Map<String, AtomicLong> topicStats = new ConcurrentHashMap<>();
+        AtomicLong totalValidRecords = new AtomicLong(0);
+        AtomicLong totalDirtyRecords = new AtomicLong(0);
         long totalRecords = 0;
 
         try (KafkaSimulatorProducer producer = new KafkaSimulatorProducer(dryRun, envPath)) {
@@ -142,12 +180,33 @@ public class BatchSimulatorMain {
                     continue;
                 }
 
-                log.info("📦 Đang sinh dữ liệu cho dataset: {} ({} bản ghi) → topic: {}",
-                        gen.getDatasetName(), customers.size(), gen.getTargetTopic());
+                // Phân bổ danh sách khách hàng có xét tới Data Skew
+                List<Customer> targetCustomers;
+                if (skewRate > 0) {
+                    int targetCount = (recordsPerDataset > 0) ? recordsPerDataset : Math.max(customers.size() * 2, 50);
+                    targetCustomers = batchPool.generateSkewedList(customers, targetCount, skewRate, hotKeyRatio);
+                    List<String> hotKeys = batchPool.getHotMsisdns(customers, hotKeyRatio);
+                    log.info("🔥 [Data Skew] Dataset '{}' có {} hot keys dồn {:.0f}% bản ghi: {}",
+                            gen.getDatasetName(), hotKeys.size(), skewRate * 100, hotKeys);
+                } else if (recordsPerDataset > 0) {
+                    targetCustomers = batchPool.generateSkewedList(customers, recordsPerDataset, 0.0, hotKeyRatio);
+                } else {
+                    targetCustomers = customers;
+                }
 
-                List<EventRecord> records = gen.generateBatch(customers, batchId, snapshotTime);
+                log.info("📦 Đang sinh dữ liệu cho dataset: {} ({} bản ghi) → topic: {}",
+                        gen.getDatasetName(), targetCustomers.size(), gen.getTargetTopic());
+
+                List<EventRecord> records = gen.generateBatch(targetCustomers, batchId, snapshotTime);
 
                 for (EventRecord record : records) {
+                    if (errorRate > 0 && rand.nextDouble() < errorRate) {
+                        record = DataQualityInjector.injectBatchError(record);
+                        totalDirtyRecords.incrementAndGet();
+                    } else {
+                        totalValidRecords.incrementAndGet();
+                    }
+
                     producer.send(record);
                     topicStats.computeIfAbsent(record.getTopic(), k -> new AtomicLong(0)).incrementAndGet();
                     totalRecords++;
@@ -167,7 +226,7 @@ public class BatchSimulatorMain {
         }
 
         // In bảng tổng kết
-        printSummary(batchId, snapshotTime, topicStats, totalRecords);
+        printSummary(batchId, snapshotTime, topicStats, totalValidRecords.get(), totalDirtyRecords.get(), totalRecords);
     }
 
     private static void saveToFile(Path baseDir, EventRecord record) {
@@ -181,12 +240,19 @@ public class BatchSimulatorMain {
     }
 
     private static void printSummary(String batchId, String snapshotTime,
-                                     Map<String, AtomicLong> stats, long totalRecords) {
+                                     Map<String, AtomicLong> stats,
+                                     long validRecords, long dirtyRecords, long totalRecords) {
         System.out.println("\n╔════════════════════════════════════════════════════════════════════╗");
         System.out.println("║                 TỔNG KẾT SINH DỮ LIỆU BATCH                      ║");
         System.out.println("╠════════════════════════════════════════════════════════════════════╣");
-        System.out.println(String.format("║ Batch ID:    %-53s ║", batchId));
-        System.out.println(String.format("║ Snapshot:    %-53s ║", snapshotTime));
+        System.out.println(String.format("║ Batch ID:        %-49s ║", batchId));
+        System.out.println(String.format("║ Snapshot:        %-49s ║", snapshotTime));
+        System.out.println(String.format("║ Bản tin hợp lệ (Valid -> result):      %-27d ║", validRecords));
+        System.out.println(String.format("║ Bản tin lỗi (Dirty -> dlq_batch_events): %-25d ║", dirtyRecords));
+        if (totalRecords > 0) {
+            double actualRate = (dirtyRecords * 100.0) / totalRecords;
+            System.out.println(String.format("║ Tỉ lệ lỗi thực tế đạt được:            %-26.2f%% ║", actualRate));
+        }
         System.out.println("╟──────────────────────────────────────────┬─────────────────────────╢");
         System.out.println("║ Kafka Topic                              │ Số bản ghi              ║");
         System.out.println("╠══════════════════════════════════════════╪═════════════════════════╣");
@@ -211,19 +277,23 @@ public class BatchSimulatorMain {
         System.out.println("                             VD: --datasets blacklist_qtrr,simfarm_3_tram");
         System.out.println("                             Mặc định: tất cả 7 datasets");
         System.out.println("  --batch-id <id>            Mã mẻ batch (VD: BATCH_20260924). Mặc định: auto theo ngày");
-        System.out.println("  --snapshot-time <iso>       Mốc thời gian snapshot ISO-8601. Mặc định: now()");
+        System.out.println("  --snapshot-time <iso>      Mốc thời gian snapshot ISO-8601. Mặc định: now()");
+        System.out.println("  --error-rate <rate>        Tỉ lệ dữ liệu lỗi để test DLQ (vd: 0.05 hoặc 5 cho 5%, mặc định: 0.0)");
+        System.out.println("  --skew-rate <rate>         Tỉ lệ bản ghi dồn vào các Hot MSISDNs (vd: 0.8 hoặc 80 cho 80%, mặc định: 0.0)");
+        System.out.println("  --hotkey-ratio <ratio>     Tỉ lệ tập khách hàng được coi là Hot Keys (vd: 0.05 hoặc 5 cho 5%, mặc định: 0.05)");
+        System.out.println("  --records-per-dataset <n>  Số lượng bản ghi sinh cho mỗi dataset (mặc định: auto)");
         System.out.println("  --dry-run                  Chỉ sinh dữ liệu và in ra log, không gửi mạng tới Kafka");
         System.out.println("  --output-dir <path>        Đường dẫn thư mục lưu các file .jsonl");
         System.out.println("  --env <path>               Đường dẫn tới file .env");
         System.out.println("  -h, --help                 Hiển thị hướng dẫn này");
         System.out.println();
         System.out.println("7 datasets khả dụng:");
-        System.out.println("  trial_0d_registered    — B1: KH đã đăng ký trial 0đ (ĐK2)");
-        System.out.println("  renewed_subscribers    — B1: KH đã từng gia hạn (ĐK3)");
-        System.out.println("  active_promo_packages  — B2: TB đang có gói ưu đãi tới ngày n-1");
-        System.out.println("  blacklist_qtrr         — B4: Blacklist QTRR (loại trừ)");
-        System.out.println("  simfarm_3_tram         — B4: Simfarm 3 trạm BTS (loại trừ)");
-        System.out.println("  cep_pushed_msisdn      — B4: Tập đã đẩy CEP (chống trùng)");
-        System.out.println("  vip_customer_list      — B5: Danh sách KH vị thế (VIP)");
+        System.out.println("  - trial_0d_registered     (B1 ĐK2: Đăng ký trial 0đ)");
+        System.out.println("  - renewed_subscribers     (B1 ĐK3: Đã từng gia hạn)");
+        System.out.println("  - active_promo_packages   (B2: Gói cước ưu đãi)");
+        System.out.println("  - blacklist_qtrr          (B4: Blacklist QTRR)");
+        System.out.println("  - simfarm_3_tram          (B4: Simfarm 3 trạm)");
+        System.out.println("  - cep_pushed_msisdn       (B4: Đã đẩy CEP)");
+        System.out.println("  - vip_customer_list       (B5: Khách hàng VIP)");
     }
 }

@@ -51,11 +51,20 @@ public class TransactionCoordinator {
     }
 
     /**
-     * Tạo 1 giao dịch mới theo kịch bản ngẫu nhiên và sinh toàn bộ sự kiện liên quan trên 10 nguồn.
+     * Tạo 1 giao dịch mới theo kịch bản ngẫu nhiên và sinh toàn bộ sự kiện liên quan trên 10 nguồn (phân bổ đều).
      */
     public List<EventRecord> generateTransactionEvents(Set<String> filterTopics) {
+        return generateTransactionEvents(filterTopics, 0.0, 0.05);
+    }
+
+    /**
+     * Tạo 1 giao dịch mới có hỗ trợ điều chỉnh tỉ lệ Data Skew dồn vào các Hot MSISDNs.
+     */
+    public List<EventRecord> generateTransactionEvents(Set<String> filterTopics, double skewRate, double hotKeyRatio) {
         ThreadLocalRandom localRand = ThreadLocalRandom.current();
-        Customer customer = customerPool.getRandomCustomer();
+        Customer customer = (skewRate > 0)
+                ? customerPool.getSkewedCustomer(skewRate, hotKeyRatio)
+                : customerPool.getRandomCustomer();
         Scenario scenario = Scenario.pickRandom(localRand);
 
         int financeId = financeIdCounter.incrementAndGet();
