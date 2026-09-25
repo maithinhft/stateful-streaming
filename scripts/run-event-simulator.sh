@@ -10,7 +10,16 @@
 #   2. Chạy tải cao 10.000 events/giây (~1.200 trans/s, 4 threads):
 #      ./scripts/run-event-simulator.sh --mode stream --rate 1200 --threads 4
 #
-#   3. Chạy benchmark tải tối đa phần cứng (unlimited rate):
+#   3. Chạy kiểm thử DLQ với 5% dữ liệu lỗi / bẩn:
+#      ./scripts/run-event-simulator.sh --mode stream --rate 10 --error-rate 5
+#
+#   4. Chạy mô phỏng Data Skew (80% lưu lượng dồn vào 5% số điện thoại Hot Keys):
+#      ./scripts/run-event-simulator.sh --mode stream --rate 20 --skew-rate 80 --hotkey-ratio 5
+#
+#   5. Chạy kết hợp cả Skew và Error Injection:
+#      ./scripts/run-event-simulator.sh --rate 10 --skew-rate 80 --error-rate 10
+#
+#   6. Chạy benchmark tải tối đa phần cứng (unlimited rate):
 #      ./scripts/run-event-simulator.sh --mode batch --count 10000 --threads 4 --rate 0 --dry-run
 # =============================================================================
 
