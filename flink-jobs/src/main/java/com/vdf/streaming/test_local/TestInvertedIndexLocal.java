@@ -4,13 +4,17 @@ import com.vdf.streaming.compiler.RuleCompiler;
 import com.vdf.streaming.index.InvertedIndexManager;
 import com.vdf.streaming.models.CompiledRuleEnvelope;
 import org.roaringbitmap.RoaringBitmap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class TestInvertedIndexLocal {
+    private static final Logger LOG = LoggerFactory.getLogger(TestInvertedIndexLocal.class);
+
     public static void main(String[] args) {
-        System.out.println("=== Bắt đầu test Inverted Index & Rule Compiler (Local Không có Kafka) ===");
+        LOG.info("=== Bắt đầu test Inverted Index & Rule Compiler (Local Không có Kafka) ===");
 
         try {
             RuleCompiler compiler = new RuleCompiler();
@@ -44,26 +48,28 @@ public class TestInvertedIndexLocal {
                     + "\"__op\": \"c\""
                     + "}";
 
-            System.out.println("[1] Đang compile rule...");
+            LOG.info("[1] Compiling rule...");
             RuleCompiler.CdcRuleEvent cdcEvent = compiler.parseCdcEvent(cdcJson);
             CompiledRuleEnvelope compiledRule = compiler.compile(cdcEvent, -1);
-            
-            System.out.println("[2] Đăng ký rule vào Inverted Index...");
-            indexManager.registerRule(compiledRule);
-            System.out.println(" => Thành công: " + compiledRule.getRuleName());
 
-            System.out.println("\n[3] Bắn Event Khớp...");
+            LOG.info("[2] Registering rule into Inverted Index...");
+            indexManager.registerRule(compiledRule);
+            LOG.info("[2] Success: {}", compiledRule.getRuleName());
+
+            LOG.info("[3] Firing matching event...");
             Map<String, Object> event1 = new HashMap<>();
             event1.put("serviceCode", "TOPUP");
             event1.put("amount", "1000000");
 
             RoaringBitmap candidate1 = indexManager.findCandidateRules("CPM", "v2", event1);
             if (!candidate1.isEmpty()) {
-                System.out.println(" => [THÀNH CÔNG] Event 1 lọt vào Candidates.");
+                LOG.info("[SUCCESS] Event 1 passed into Candidates: {}", candidate1);
+            } else {
+                LOG.warn("[MISS] Event 1 did not match any candidate rule.");
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            LOG.error("Test failed with exception", e);
         }
     }
 }

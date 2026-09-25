@@ -1,0 +1,4 @@
+2026-09-25 15:01:07.785 | INFO  | com.vdf.streaming.config.ConfigLoader | .env found at: /home/tmkhoa1812/CodingSpace/Projects/VDT/2026/Phase2/StatefulStreamingNew/stateful-streaming/.env
+2026-09-25 15:01:07.787 | INFO  | com.vdf.streaming.config.ConfigLoader | .env loaded: 31 total entries, 31 injected into system properties
+2026-09-25 15:01:07.788 | INFO  | com.vdf.streaming.config.ConfigLoader | Loading config file: config.dev.yml (APP_ENV=dev)
+2026-09-25 15:01:07.812 | INFO  | com.vdf.streaming.config.ConfigLoader | Config loaded from 'config.dev.yml' with 5 top-level keys

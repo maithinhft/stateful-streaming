@@ -18,6 +18,9 @@
         <flink.version>1.20.5</flink.version>
         <flink.kafka.version>3.3.0-1.20</flink.kafka.version>
         <jackson.version>2.16.1</jackson.version>
+        <snakeyaml.version>2.2</snakeyaml.version>
+        <slf4j.version>2.0.13</slf4j.version>
+        <logback.version>1.5.6</logback.version>
         <skipTests>true</skipTests>
     </properties>
 
@@ -81,13 +84,25 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>1.7.36</version>
+            <version>${slf4j.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.11</version>
+            <version>${logback.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ===================================================== -->
+        <!-- YAML Config (SnakeYAML) -->
+        <!-- ===================================================== -->
+
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${snakeyaml.version}</version>
         </dependency>
 
         <!-- PostgreSQL JDBC Driver for Dynamic Metadata Discovery -->
@@ -151,11 +166,25 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.0</version>
-                <configuration>
-                    <mainClass>flink.RealtimeCepJob</mainClass>
-                    <!-- Quan trọng: Bao gồm các thư viện có scope=provided (như Flink) vào classpath khi chạy local -->
-                    <includeProvidedDependencies>true</includeProvidedDependencies>
-                </configuration>
+                <executions>
+
+                    <!-- Chạy job chính: mvn exec:java@run -->
+                    <execution>
+                        <id>run</id>
+                        <configuration>
+                            <mainClass>flink.RealtimeCepJob</mainClass>
+                        </configuration>
+                    </execution>
+
+                    <!-- Test ConfigLoader: mvn exec:java@test-config -->
+                    <execution>
+                        <id>test-config</id>
+                        <configuration>
+                            <mainClass>com.vdf.streaming.config.ConfigLoader</mainClass>
+                        </configuration>
+                    </execution>
+
+                </executions>
             </plugin>
 
             <!-- ================================================= -->

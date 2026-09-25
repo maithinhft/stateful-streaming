@@ -1,0 +1,68 @@
+app:
+  name: "Stateful Streaming Core"
+  env: "dev"
+  version: "1.0.0"
+
+# ================================================================
+# PostgreSQL
+# ================================================================
+postgres:
+  host: "localhost"
+  port: "${POSTGRES_PORT:-5433}"
+  db: "${POSTGRES_DB:-realtime_core}"
+  user: "${POSTGRES_USER:-postgres}"
+  password: "${POSTGRES_PASSWORD:-postgres}"
+  table_prefix: "kafka_stream"
+  url: "jdbc:postgresql://localhost:${POSTGRES_PORT:-5433}/${POSTGRES_DB:-realtime_core}"
+
+# ================================================================
+# Kafka - Plain (SASL PLAIN)
+# ================================================================
+kafka:
+  plain:
+    bootstrap_servers: "localhost:${KAFKA_PLAIN_PORT:-9092}"
+    security_protocol: "SASL_PLAINTEXT"
+    sasl_mechanism: "PLAIN"
+    username: "${KAFKA_PLAIN_USERNAME:-admin}"
+    password: "${KAFKA_PLAIN_PASSWORD:-admin-secret}"
+  gssapi:
+    bootstrap_servers: "localhost:${KAFKA_GSSAPI_PORT:-9094}"
+    security_protocol: "SASL_PLAINTEXT"
+    sasl_mechanism: "GSSAPI"
+    kerberos_service_name: "kafka"
+    principal: "${KAFKA_GSSAPI_PRINCIPAL:-client@EXAMPLE.COM}"
+    keytab: "${KAFKA_GSSAPI_KEYTAB:-/var/lib/secret/client.keytab}"
+    krb5_conf: "${KAFKA_GSSAPI_KRB5_CONF:-/var/lib/secret/krb5.conf}"
+  topics:
+    rule_definitions: "rule_definitions"
+    schema_definitions: "schema_definitions"
+    events: "events"
+    result: "result"
+    dlq: "dlq"
+  group:
+    rule: "flink-rule-group"
+    events: "flink-events-group"
+    passthrough: "flink-passthrough-group"
+  stream:
+    rule_stream_id: "rule"
+    events_stream_id: "stream-events"
+  discovery_interval_ms: 30000
+
+# ================================================================
+# Flink Job Parameters
+# ================================================================
+flink:
+  parallelism: 1
+  checkpoint:
+    interval_ms: 300000
+    min_pause_ms: 30000
+    timeout_ms: 120000
+    dir: "file:///opt/flink/checkpoints"
+  latency_tracking_interval_ms: 5000
+
+# ================================================================
+# Logging
+# ================================================================
+logging:
+  level: "INFO"
+  log_dir: "outputs/logs"

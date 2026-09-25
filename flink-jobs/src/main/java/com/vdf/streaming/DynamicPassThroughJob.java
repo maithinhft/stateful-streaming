@@ -1,5 +1,6 @@
 package com.vdf.streaming;
 
+import com.vdf.streaming.config.ConfigLoader;
 import com.vdf.streaming.config.KafkaClusterConfig;
 import com.vdf.streaming.dynamic.deserializer.KafkaEventRecordDeserializer;
 import com.vdf.streaming.dynamic.metadata.PostgresKafkaMetadataService;
@@ -110,7 +111,8 @@ public class DynamicPassThroughJob {
         // 2. Cấu hình Result Sink (cụm PLAIN: topic 'result')
         String resultBootstrap = KafkaClusterConfig.getBootstrapServers(parameters, "result", KafkaClusterConfig.CLUSTER_PLAIN);
         Properties resultProps = KafkaClusterConfig.getProducerProperties(parameters, "result", KafkaClusterConfig.CLUSTER_PLAIN);
-        String resultTopic = parameters.get("result.topic", "result");
+        String resultTopic = parameters.get("result.topic",
+                ConfigLoader.getString("kafka.topics.result", "result"));
         LOG.info("Result Sink -> Bootstrap: {}, Topic: {}", resultBootstrap, resultTopic);
 
         KafkaSink<String> resultSink = KafkaSink.<String>builder()
