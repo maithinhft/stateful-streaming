@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vdf.streaming.event.kafka.KafkaClusterType;
 import com.vdf.streaming.event.model.Customer;
 import com.vdf.streaming.event.model.EventRecord;
-import com.vdf.streaming.event.model.Scenario;
 import com.vdf.streaming.event.model.TransactionContext;
 
 import java.util.ArrayList;
