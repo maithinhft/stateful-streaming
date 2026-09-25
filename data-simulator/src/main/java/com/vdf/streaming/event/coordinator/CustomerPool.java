@@ -3,6 +3,7 @@ package com.vdf.streaming.event.coordinator;
 import com.vdf.streaming.event.model.Customer;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -62,6 +63,60 @@ public class CustomerPool {
 
     public Customer getRandomCustomer() {
         return customers.get(ThreadLocalRandom.current().nextInt(customers.size()));
+    }
+
+    /**
+     * Lấy khách hàng có hỗ trợ phân bổ Skew (Hot Keys).
+     *
+     * @param skewRate    Tỉ lệ lưu lượng dồn vào hot keys (0.0: phân bổ đều, 0.8: 80% traffic vào hot keys).
+     * @param hotKeyRatio Tỉ lệ tập khách hàng được chọn làm hot keys (vd 0.05: 5% khách hàng đầu tiên).
+     */
+    public Customer getSkewedCustomer(double skewRate, double hotKeyRatio) {
+        if (skewRate <= 0.0 || customers.isEmpty()) {
+            return getRandomCustomer();
+        }
+        int hotCount = Math.max(1, (int) Math.round(customers.size() * Math.min(1.0, Math.max(0.01, hotKeyRatio))));
+        double r = ThreadLocalRandom.current().nextDouble();
+        if (r < skewRate) {
+            // Rơi vào hot keys
+            return customers.get(ThreadLocalRandom.current().nextInt(hotCount));
+        } else {
+            // Rơi vào các keys còn lại (nếu có)
+            if (customers.size() > hotCount) {
+                return customers.get(hotCount + ThreadLocalRandom.current().nextInt(customers.size() - hotCount));
+            }
+            return getRandomCustomer();
+        }
+    }
+
+    /**
+     * Danh sách khách hàng thuộc nhóm Hot Keys theo tỉ lệ hotKeyRatio.
+     */
+    public List<Customer> getHotCustomers(double hotKeyRatio) {
+        if (customers.isEmpty()) return Collections.emptyList();
+        int hotCount = Math.max(1, (int) Math.round(customers.size() * Math.min(1.0, Math.max(0.01, hotKeyRatio))));
+        return Collections.unmodifiableList(customers.subList(0, Math.min(hotCount, customers.size())));
+    }
+
+    /**
+     * Danh sách số điện thoại chuẩn hóa (+84...) thuộc nhóm Hot Keys.
+     */
+    public List<String> getHotMsisdns(double hotKeyRatio) {
+        List<Customer> hotCusts = getHotCustomers(hotKeyRatio);
+        List<String> list = new ArrayList<>();
+        for (Customer c : hotCusts) {
+            String msisdn = c.getMsisdn();
+            if (msisdn.startsWith("+")) {
+                list.add(msisdn);
+            } else if (msisdn.startsWith("84")) {
+                list.add("+" + msisdn);
+            } else if (msisdn.startsWith("0")) {
+                list.add("+84" + msisdn.substring(1));
+            } else {
+                list.add("+" + msisdn);
+            }
+        }
+        return list;
     }
 
     public List<Customer> getAll() {

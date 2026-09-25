@@ -31,7 +31,7 @@ fi
 SERVER_IP="${SERVER_IP:-localhost}"
 FLINK_PORT="${FLINK_PORT:-8081}"
 
-MAIN_CLASS="flink.DynamicPassThroughJob"
+MAIN_CLASS="com.vdf.streaming.DynamicPassThroughJob"
 JAR_PATH="$PROJECT_ROOT/flink-jobs/target/flink-jobs-1.0-SNAPSHOT.jar"
 PARALLELISM=4
 FORCE_BUILD=false
@@ -48,7 +48,7 @@ Tùy chọn:
   -s, --server <ip>         Địa chỉ IP của Flink server (mặc định từ .env: \$SERVER_IP hoặc localhost)
   -p, --port <port>         Cổng Web/REST của Flink JobManager (mặc định từ .env: \$FLINK_PORT hoặc 8081)
   -j, --jar <path>          Đường dẫn tới file JAR (mặc định: flink-jobs/target/flink-jobs-1.0-SNAPSHOT.jar)
-  -c, --class <class>       Main entry-class (mặc định: flink.DynamicPassThroughJob)
+  -c, --class <class>       Main entry-class (mặc định: com.vdf.streaming.DynamicPassThroughJob)
   --parallelism <n>         Độ song song của Job (mặc định: 4)
   -b, --build               Build lại file JAR trước khi submit (mvn clean package)
   -h, --help                Hiển thị hướng dẫn này

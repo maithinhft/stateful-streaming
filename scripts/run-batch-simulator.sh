@@ -7,13 +7,19 @@
 #   1. Sinh tất cả 7 datasets (dry-run):
 #      ./scripts/run-batch-simulator.sh --dry-run
 #
-#   2. Sinh chỉ dataset blacklist + simfarm (B4):
-#      ./scripts/run-batch-simulator.sh --datasets blacklist_qtrr,simfarm_3_tram --dry-run
-#
-#   3. Sinh và đẩy lên Kafka thật:
+#   2. Sinh và đẩy lên Kafka thật:
 #      ./scripts/run-batch-simulator.sh
 #
-#   4. Ghi ra file JSONL:
+#   3. Sinh mẻ batch có 10% dữ liệu lỗi / bẩn để test DLQ (dlq_batch_events):
+#      ./scripts/run-batch-simulator.sh --error-rate 10
+#
+#   4. Sinh mẻ batch bị Data Skew (80% bản ghi dồn vào top 5% Hot MSISDNs, mỗi dataset 100 bản ghi):
+#      ./scripts/run-batch-simulator.sh --skew-rate 80 --records-per-dataset 100
+#
+#   5. Sinh kết hợp cả Data Skew và 15% lỗi:
+#      ./scripts/run-batch-simulator.sh --skew-rate 70 --error-rate 15 --records-per-dataset 50
+#
+#   6. Ghi ra file JSONL:
 #      ./scripts/run-batch-simulator.sh --output-dir local/data/batch/ --dry-run
 # =============================================================================
 

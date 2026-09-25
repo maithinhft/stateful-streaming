@@ -79,4 +79,57 @@ public class BatchCustomerPool {
     public List<Customer> getBlacklistQtrr()         { return blacklistQtrr; }
     public List<Customer> getSimfarm3Tram()          { return simfarm3Tram; }
     public List<Customer> getCepPushedMsisdn()       { return cepPushedMsisdn; }
+
+    /**
+     * Tạo danh sách khách hàng có phân bổ Skew (Hot Keys).
+     *
+     * @param baseList      Danh sách khách hàng gốc của dataset
+     * @param targetCount   Tổng số bản ghi mong muốn sinh ra
+     * @param skewRate      Tỉ lệ bản ghi dồn vào hot keys (vd: 0.8 = 80%)
+     * @param hotKeyRatio   Tỉ lệ số lượng khách hàng được coi là hot keys (vd: 0.1 = 10%)
+     */
+    public List<Customer> generateSkewedList(List<Customer> baseList, int targetCount, double skewRate, double hotKeyRatio) {
+        if (baseList == null || baseList.isEmpty()) return Collections.emptyList();
+        if (targetCount <= 0) targetCount = baseList.size();
+
+        if (skewRate <= 0.0) {
+            if (targetCount == baseList.size()) return new ArrayList<>(baseList);
+            List<Customer> result = new ArrayList<>(targetCount);
+            Random rand = java.util.concurrent.ThreadLocalRandom.current();
+            for (int i = 0; i < targetCount; i++) {
+                result.add(baseList.get(rand.nextInt(baseList.size())));
+            }
+            return result;
+        }
+
+        int hotCount = Math.max(1, (int) Math.round(baseList.size() * Math.min(1.0, Math.max(0.01, hotKeyRatio))));
+        List<Customer> hotSubset = baseList.subList(0, Math.min(hotCount, baseList.size()));
+        List<Customer> nonHotSubset = (baseList.size() > hotCount)
+                ? baseList.subList(hotCount, baseList.size())
+                : baseList;
+
+        List<Customer> result = new ArrayList<>(targetCount);
+        Random rand = java.util.concurrent.ThreadLocalRandom.current();
+        for (int i = 0; i < targetCount; i++) {
+            if (rand.nextDouble() < skewRate) {
+                result.add(hotSubset.get(rand.nextInt(hotSubset.size())));
+            } else {
+                result.add(nonHotSubset.get(rand.nextInt(nonHotSubset.size())));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Lấy danh sách số điện thoại Hot MSISDNs của 1 dataset.
+     */
+    public List<String> getHotMsisdns(List<Customer> baseList, double hotKeyRatio) {
+        if (baseList == null || baseList.isEmpty()) return Collections.emptyList();
+        int hotCount = Math.max(1, (int) Math.round(baseList.size() * Math.min(1.0, Math.max(0.01, hotKeyRatio))));
+        List<String> list = new ArrayList<>();
+        for (int i = 0; i < Math.min(hotCount, baseList.size()); i++) {
+            list.add(normalizeE164(baseList.get(i).getMsisdn()));
+        }
+        return list;
+    }
 }
