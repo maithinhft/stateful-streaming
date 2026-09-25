@@ -29,7 +29,7 @@ public class TestFlinkRuleJob {
         env.getConfig().setGlobalJobParameters(params);
 
         // Lấy config từ DB (Mặc định trong Docker, tên miền 'postgres' và 'kafka-plain' tự động hiểu)
-        String pgUrl = params.get("postgres.url", "jdbc:postgresql://postgres:5432/realtime_core");
+        String pgUrl = params.get("postgres.url", "jdbc:postgresql://realtime-postgres:5432/realtime_core");
         String pgUser = params.get("postgres.user", "postgres");
         String pgPassword = params.get("postgres.password", "postgres");
         
