@@ -113,7 +113,11 @@ CREATE TABLE IF NOT EXISTS kafka_batch_topic_config (
     UNIQUE (cluster_config_id, topic_name)
 );
 
--- Dữ liệu mẫu ban đầu cho kafka_stream_cluster_config (CHỈ cấu hình cho event streams)
+-- ============================================================
+-- 1. KAFKA CLUSTER & TOPIC CONFIGURATIONS (STREAM & BATCH)
+-- ============================================================
+
+-- 1.1 Cấu hình Cluster cho Stream Events
 INSERT INTO kafka_stream_cluster_config (stream_id, cluster_name, bootstrap_servers, security_protocol, sasl_mechanism, sasl_kerberos_service_name, sasl_jaas_config, enabled)
 VALUES 
 (
@@ -138,6 +142,65 @@ VALUES
 )
 ON CONFLICT (stream_id, cluster_name) DO NOTHING;
 
+-- 1.2 Danh sách 10 Topic cho Stream Events
+-- Cụm kafka-gssapi (Kerberos SASL_PLAINTEXT :29094)
+INSERT INTO kafka_stream_topic_config (cluster_config_id, topic_name, enabled)
+SELECT id, t.topic, TRUE FROM kafka_stream_cluster_config,
+(VALUES 
+  ('V1-INSERT-TRANS-DAILY-HIS'),
+  ('V1-UPDATE-TRANS-DAILY-HIS'),
+  ('P1-EVENT-TRACKING')
+) AS t(topic)
+WHERE stream_id = 'stream-events' AND cluster_name = 'kafka-gssapi'
+ON CONFLICT (cluster_config_id, topic_name) DO NOTHING;
+
+-- Cụm kafka-plain (SASL_PLAINTEXT PLAIN :29092)
+INSERT INTO kafka_stream_topic_config (cluster_config_id, topic_name, enabled)
+SELECT id, t.topic, TRUE FROM kafka_stream_cluster_config,
+(VALUES 
+  ('GNOTIFY_SAVE_MESSAGE_HBASE'),
+  ('history_service_insert_hbase_product'),
+  ('HISTORY_SERVICE_INSERT_HBASE_OBJECT'),
+  ('cdcn_log_central_prod'),
+  ('ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD'),
+  ('core-recharge-history'),
+  ('PMT-TRANSACTION-SYNC-CMD')
+) AS t(topic)
+WHERE stream_id = 'stream-events' AND cluster_name = 'kafka-plain'
+ON CONFLICT (cluster_config_id, topic_name) DO NOTHING;
+
+-- 1.3 Cấu hình Cluster cho Batch Events (kafka-plain:29092)
+INSERT INTO kafka_batch_cluster_config (stream_id, cluster_name, bootstrap_servers, security_protocol, sasl_mechanism, sasl_kerberos_service_name, sasl_jaas_config, enabled)
+VALUES (
+    'batch-events',
+    'kafka-plain',
+    'kafka-plain:29092',
+    'SASL_PLAINTEXT',
+    'PLAIN',
+    NULL,
+    'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";',
+    TRUE
+)
+ON CONFLICT (stream_id, cluster_name) DO NOTHING;
+
+-- 1.4 Danh sách 7 Batch Topics cho Batch Events (Bài toán B1, B2, B4, B5)
+INSERT INTO kafka_batch_topic_config (cluster_config_id, topic_name, enabled)
+SELECT id, t.topic, TRUE FROM kafka_batch_cluster_config,
+(VALUES 
+  ('batch_trial_0d_registered'),
+  ('batch_renewed_subscribers'),
+  ('batch_active_promo_packages'),
+  ('batch_blacklist_qtrr'),
+  ('batch_simfarm_3_tram'),
+  ('batch_cep_pushed_msisdn'),
+  ('batch_vip_customer_list')
+) AS t(topic)
+WHERE stream_id = 'batch-events' AND cluster_name = 'kafka-plain'
+ON CONFLICT (cluster_config_id, topic_name) DO NOTHING;
+
+-- ============================================================
+-- 2. SCHEMA DEFINITIONS (BATCH & STREAM)
+-- ============================================================
 
 -- ============================================================
 -- A. BATCH EVENT SCHEMAS (7 NGUỒN BATCH: B1, B2, B4, B5)
@@ -4116,64 +4179,8 @@ $json$::jsonb)
 ON CONFLICT (schema_id) DO NOTHING;
 
 -- ============================================================
--- D. BỔ SUNG TOPIC CHO KAFKA STREAM & BATCH CLUSTER CONFIG
+-- 3. PERMISSIONS & REPLICATION (CDC DEBEZIUM)
 -- ============================================================
-
--- 1. Thêm 10 Realtime Topics thực tế vào kafka_stream_topic_config
--- Topics thuộc cụm kafka-gssapi (Kerberos SASL_PLAINTEXT :29094)
-INSERT INTO kafka_stream_topic_config (cluster_config_id, topic_name, enabled)
-SELECT id, t.topic, TRUE FROM kafka_stream_cluster_config,
-(VALUES 
-  ('V1-INSERT-TRANS-DAILY-HIS'),
-  ('V1-UPDATE-TRANS-DAILY-HIS'),
-  ('P1-EVENT-TRACKING')
-) AS t(topic)
-WHERE stream_id = 'stream-events' AND cluster_name = 'kafka-gssapi'
-ON CONFLICT (cluster_config_id, topic_name) DO NOTHING;
-
--- Topics thuộc cụm kafka-plain (SASL_PLAINTEXT PLAIN :29092)
-INSERT INTO kafka_stream_topic_config (cluster_config_id, topic_name, enabled)
-SELECT id, t.topic, TRUE FROM kafka_stream_cluster_config,
-(VALUES 
-  ('GNOTIFY_SAVE_MESSAGE_HBASE'),
-  ('history_service_insert_hbase_product'),
-  ('HISTORY_SERVICE_INSERT_HBASE_OBJECT'),
-  ('cdcn_log_central_prod'),
-  ('ADS-THIRD-PARTY-GIFT-DATA-RESULT-CMD'),
-  ('core-recharge-history'),
-  ('PMT-TRANSACTION-SYNC-CMD')
-) AS t(topic)
-WHERE stream_id = 'stream-events' AND cluster_name = 'kafka-plain'
-ON CONFLICT (cluster_config_id, topic_name) DO NOTHING;
-
--- 2. Cấu hình Cluster cho Batch Events (kafka-plain:29092)
-INSERT INTO kafka_batch_cluster_config (stream_id, cluster_name, bootstrap_servers, security_protocol, sasl_mechanism, sasl_kerberos_service_name, sasl_jaas_config, enabled)
-VALUES (
-    'batch-events',
-    'kafka-plain',
-    'kafka-plain:29092',
-    'SASL_PLAINTEXT',
-    'PLAIN',
-    NULL,
-    'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";',
-    TRUE
-)
-ON CONFLICT (stream_id, cluster_name) DO NOTHING;
-
--- 3. Thêm 7 Batch Topics vào kafka_batch_topic_config
-INSERT INTO kafka_batch_topic_config (cluster_config_id, topic_name, enabled)
-SELECT id, t.topic, TRUE FROM kafka_batch_cluster_config,
-(VALUES 
-  ('batch_trial_0d_registered'),
-  ('batch_renewed_subscribers'),
-  ('batch_active_promo_packages'),
-  ('batch_blacklist_qtrr'),
-  ('batch_simfarm_3_tram'),
-  ('batch_cep_pushed_msisdn'),
-  ('batch_vip_customer_list')
-) AS t(topic)
-WHERE stream_id = 'batch-events' AND cluster_name = 'kafka-plain'
-ON CONFLICT (cluster_config_id, topic_name) DO NOTHING;
 
 GRANT USAGE ON SCHEMA public TO replicator;
 
